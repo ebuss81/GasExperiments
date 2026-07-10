@@ -24,7 +24,7 @@ from naiveautoml.evaluators import SplitBasedEvaluator
 import matplotlib
 from tabpfn import TabPFNClassifier
 from tabicl import TabICLClassifier
-matplotlib.use('Qt5Agg')
+#matplotlib.use('Qt5Agg')
 import os
 os.environ["TABPFN_TOKEN"] = "tabpfn_sk_nLiLECwi51aaI_CVnS6yOYxsiVx9D80RCVCiMO_a7LM"
 
@@ -1021,6 +1021,7 @@ class GasClassification:
             print(f"=== {approach} ({n_max} feature counts) ===")
 
             for n in range(1, n_max + 1):
+                print(f"{approach}_{n}")
                 subset = ranked_list[:n]
                 clf = self.classifier_config(classifier_name)
                 clf.fit(data_init['train']['X'][subset], data_init['train']['y'])
