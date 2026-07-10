@@ -1069,16 +1069,19 @@ class GasClassification:
         return table
 
     def plot_feature_subset_accuracy(self, classifier_name="HistGradBoost",
-                                      out_name=None, show=True, save=True):
+                                      out_name=None, show=True, save=True, metric="accuracy"):
         """
         Load every CSV in results_path/feature_acc_lists_to_plot (each
-        written by compute_feature_subset_accuracy) and plot accuracy vs
+        written by compute_feature_subset_accuracy) and plot metric vs
         number of features on one figure - one subplot per split, one line
         per (source, approach) combination - so any combination of
         previously computed approaches/sources can be compared together
         just by having their tables sit in that folder. Series with a
         single row (e.g. the "all_features" baseline) are drawn as a flat
         dashed reference line instead of a single point.
+
+        metric selects which column to plot: "accuracy" (default) or
+        "f1_score" - both are saved by compute_feature_subset_accuracy.
         """
         results_path = self.resolve_config_path(self.config_paths['results_path'])
         tables_dir = results_path / "feature_acc_lists_to_plot"
@@ -1101,22 +1104,22 @@ class GasClassification:
             for series_name, group in split_data.groupby('series'):
                 group = group.sort_values('n_features')
                 if len(group) == 1:
-                    ax.hlines(group['accuracy'].iloc[0], x_min, x_max, linestyles='--', label=series_name)
+                    ax.hlines(group[metric].iloc[0], x_min, x_max, linestyles='--', label=series_name)
                 else:
-                    ax.plot(group['n_features'], group['accuracy'], label=series_name, marker='.')
+                    ax.plot(group['n_features'], group[metric], label=series_name, marker='.')
             ax.set_xlim(x_min, x_max)
-            ax.set_title(f"{split.capitalize()} accuracy")
-            ax.set_ylabel("Accuracy")
+            ax.set_title(f"{split.capitalize()} {metric}")
+            ax.set_ylabel(metric.replace('_', ' ').capitalize())
             ax.grid(True, alpha=0.3)
             ax.legend(fontsize=8)
         axes[-1].set_xlabel("Number of features")
-        fig.suptitle(f"{classifier_name} accuracy vs number of features")
+        fig.suptitle(f"{classifier_name} {metric} vs number of features")
         fig.tight_layout()
 
         if save:
             figures_path = self.resolve_config_path(self.config_paths['figures_path'])
             figures_path.mkdir(parents=True, exist_ok=True)
-            out_name = out_name or f"{classifier_name}_feature_subset_accuracy_combined.png"
+            out_name = out_name or f"{classifier_name}_feature_subset_{metric}_combined.png"
             out = figures_path / out_name
             fig.savefig(out, dpi=150)
             print(f"Saved {out}")
@@ -1138,7 +1141,7 @@ if __name__ == "__main__":
     #GC.train_classifier_feature_subset()
     #GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True)
     GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
-    #GC.plot_feature_subset_accuracy(classifier_name="TabPFN")
+    GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="f1_score")
     #data_init, groups = GC.load_and_process_data_for_classification(apply_smote=False, scale=True)
     #fs = FeatureSelection()
     #fs.apply_feature_selection(data_init, groups, save=True)
