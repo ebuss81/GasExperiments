@@ -1,0 +1,11 @@
+rank,mrmr_mean,mrmr_max,combined_mrmr,jmi,cmim
+1,value__absolute_sum_of_changes,value__absolute_sum_of_changes,"value__change_quantiles__f_agg_""var""__isabs_True__qh_1.0__ql_0.4",value__sum_values,value__sum_values
+2,value__variation_coefficient,value__variation_coefficient,"value__fft_coefficient__attr_""abs""__coeff_1",value__longest_strike_below_mean,value__permutation_entropy__dimension_3__tau_1
+3,"value__agg_linear_trend__attr_""slope""__chunk_len_5__f_agg_""mean""","value__agg_linear_trend__attr_""slope""__chunk_len_5__f_agg_""mean""","value__change_quantiles__f_agg_""var""__isabs_True__qh_0.8__ql_0.0",value__abs_energy,value__abs_energy
+4,value__mean_abs_change,value__sum_of_reoccurring_data_points,value__variation_coefficient,value__permutation_entropy__dimension_3__tau_1,value__mean_abs_change
+5,value__sum_of_reoccurring_data_points,value__index_mass_quantile__q_0.3,"value__fft_aggregated__aggtype_""centroid""",value__mean_abs_change,value__mean_second_derivative_central
+6,value__index_mass_quantile__q_0.3,"value__cwt_coefficients__coeff_0__w_20__widths_(2, 5, 10, 20)",value__variance_larger_than_standard_deviation,value__sum_of_reoccurring_values,value__median
+7,"value__change_quantiles__f_agg_""mean""__isabs_True__qh_1.0__ql_0.0","value__change_quantiles__f_agg_""mean""__isabs_False__qh_1.0__ql_0.8","value__change_quantiles__f_agg_""var""__isabs_False__qh_1.0__ql_0.4",value__absolute_maximum,value__mean
+8,"value__fft_coefficient__attr_""imag""__coeff_43","value__agg_linear_trend__attr_""slope""__chunk_len_5__f_agg_""var""","value__agg_linear_trend__attr_""slope""__chunk_len_5__f_agg_""mean""",value__mean_n_absolute_max__number_of_maxima_7,value__standard_deviation
+9,"value__cwt_coefficients__coeff_0__w_20__widths_(2, 5, 10, 20)","value__agg_linear_trend__attr_""stderr""__chunk_len_10__f_agg_""mean""","value__change_quantiles__f_agg_""var""__isabs_False__qh_0.6__ql_0.0",value__permutation_entropy__dimension_6__tau_1,value__variation_coefficient
+10,"value__agg_linear_trend__attr_""stderr""__chunk_len_10__f_agg_""mean""","value__fft_coefficient__attr_""real""__coeff_90","value__cwt_coefficients__coeff_2__w_20__widths_(2, 5, 10, 20)",value__mean_second_derivative_central,value__variance

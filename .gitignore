@@ -1,0 +1,79 @@
+# ===================================
+#  Python
+# ===================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# PyCharm / VS Code / JetBrains IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# mypy / static analysis
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Logs and temp files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# OS / editor files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ===================================
+#  Project-specific
+# ===================================
+00_time_windows/
+04_figures/
+
+*.joblib

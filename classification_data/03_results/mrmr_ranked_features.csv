@@ -1,0 +1,6 @@
+rank,mutual_info,anova,chi2
+1,value__absolute_sum_of_changes,"value__change_quantiles__f_agg_""var""__isabs_False__qh_1.0__ql_0.0",value__variance_larger_than_standard_deviation
+2,value__variation_coefficient,"value__fft_coefficient__attr_""abs""__coeff_1","value__change_quantiles__f_agg_""var""__isabs_True__qh_0.8__ql_0.0"
+3,"value__agg_linear_trend__attr_""slope""__chunk_len_5__f_agg_""mean""","value__fft_aggregated__aggtype_""centroid""",value__range_count__max_1__min_-1
+4,value__mean_abs_change,"value__change_quantiles__f_agg_""var""__isabs_True__qh_1.0__ql_0.6","value__change_quantiles__f_agg_""var""__isabs_True__qh_1.0__ql_0.4"
+5,value__sum_of_reoccurring_data_points,"value__change_quantiles__f_agg_""var""__isabs_True__qh_1.0__ql_0.0","value__agg_linear_trend__attr_""rvalue""__chunk_len_50__f_agg_""min"""

@@ -1,0 +1,14 @@
+{
+    "paths": {
+    "root": "./",
+    "storage_path": "/media/wp/watchplant/GasSetup/cleaned_gas",
+    "time_window_path": "./00_time_windows",
+    "features_path": "./01_features",
+    "splits_path": "./02_test_train_val_split",
+    "results_path": "./03_results",
+    "figures_path": "./04_figures",
+    "phytonode_path_water": "data1/2025_Tomato_Waterstress/Exp1 - drought stress (camera failed after 1 week)/PN/",
+    "phytonode_path_nutrition": "data1/2026_Tomato_Nutrition/N_Exp1/PN/",
+    "soilmoisture_path": "/media/wp/data1/2025_Tomato_Waterstress/Exp1 - drought stress (camera failed after 1 week)/Soil_moisture/"
+    }
+}

@@ -1,0 +1,114 @@
+{
+  "datetime_format": "YYYY-MM-DD_HH:MM",
+  "experiment_time": {
+    "1": "08:00",
+    "2": "10:10",
+    "3": "12:20",
+    "4": "14:30",
+    "5": "16:40",
+    "6": "18:50"
+  },
+  "CO2": [
+    {
+      "name": "Exp25_12",
+      "start_datetime": "2025-08-20 12:20",
+      "end_datetime": "2025-08-25 21:00",
+      "description": "34 applications"
+    },
+    {
+      "name": "Exp25_14",
+      "start_datetime": "2025-09-06 08:00",
+      "end_datetime": "2025-09-12 21:00",
+      "description": "42 applications"
+    },
+     {
+      "name": "Exp25_15",
+      "start_datetime": "2025-09-18 08:00",
+      "end_datetime": "2025-09-28 21:00",
+      "description": "only obvious in last applications, 66 applications"
+    },
+     {
+      "name": "Exp25_16",
+      "start_datetime": "2025-10-02 08:00",
+      "end_datetime": "2025-10-05 21:00",
+      "description": " removed first two days, gas sensor error, 24 applications"
+    },
+     {
+      "name": "Exp25_19",
+      "start_datetime": "2025-10-23 08:00",
+      "end_datetime": "2025-11-03 21:00",
+      "description": " 72 applications"
+    }
+  ],
+  "N2": [
+    {
+      "name": "Exp25_02",
+      "start_datetime": "2025-01-15 08:00",
+      "end_datetime": "2025-01-16 18:50",
+      "description": "11 applications"
+    },
+    {
+      "name": "Exp25_03",
+      "start_datetime": "2025-01-25 08:00",
+      "end_datetime": "2025-01-30 21:00",
+      "description": " removed first two weeks due to sensor failur, 36 applications"
+    },
+     {
+      "name": "Exp25_04",
+      "start_datetime": "2025-01-31 12:20",
+      "end_datetime": "2025-02-02 14:30",
+      "description": "12 applications"
+    },
+     {
+      "name": "Exp25_05",
+      "start_datetime": "2025-02-22  08:00",
+      "end_datetime": "2025-03-01 21:00",
+      "description": "48 applications, on is missing on the 02_24"
+    },
+    {
+      "name": "Exp25_07",
+      "start_datetime": "2025-03-11 08:00",
+      "end_datetime": "2025-03-11 18:50",
+      "description": "5 applications"
+    },
+    {
+      "name": "Exp25_07",
+      "start_datetime": "2025-03-18 08:00",
+      "end_datetime": "2025-03-18 21:00",
+      "description": "ausfall in der mitte, 6 applications"
+    }
+  ,
+     {
+      "name": "Exp25_08",
+      "start_datetime": "2025-04-01 12:20",
+      "end_datetime": "2025-04-06 21:00",
+      "description": "34 applications"
+    }
+  ],
+  "O3": [
+    {
+      "name": "Exp44_Ivy2",
+      "start_datetime": "2023-11-01 06:00",
+      "end_datetime": "2023-11-25 12:00",
+      "description": "17 applications"
+    },
+    {
+      "name": "Exp45_Ivy4",
+      "start_datetime": "None",
+      "end_datetime": "None",
+      "description": "19 applications"
+    },
+     {
+      "name": "Exp46_Ivy0",
+      "start_datetime": "None",
+      "end_datetime": "None",
+      "description": "18 applications"
+    },
+     {
+      "name": "Exp47_Ivy5",
+      "start_datetime": "None",
+      "end_datetime": "None",
+      "description": "24 applications"
+    }
+  ]
+}

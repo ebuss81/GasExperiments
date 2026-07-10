@@ -1,0 +1,17 @@
+# Pinned to what's known to work together in this project.
+# scikit-learn is pinned to exactly 1.5.2 because naiveautoml requires that
+# exact version; imbalanced-learn breaks on newer scikit-learn releases.
+numpy==1.26.4
+pandas==2.2.3
+matplotlib==3.6.3
+scikit-learn==1.5.2
+imbalanced-learn==0.13.0
+joblib==1.5.0
+tqdm==4.67.1
+naiveautoml==0.1.6
+skfeature-chappers==1.1.0
+tsfresh==0.21.0
+torch==2.7.0
+tabpfn==8.0.8
+tabicl==2.1.1
+PyQt5==5.15.11
