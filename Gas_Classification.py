@@ -544,8 +544,8 @@ class GasClassification:
 
     def load_and_process_data_for_classification(self, apply_smote=False, apply_adasyn=False, scale=True,
                                                    undersample=False, impute=True, target='class', fold=None,
-                                                   keep_classes=['CO2_post', 'prestimulus'], drop_classes=None,
-                                                   gas='CO2'):
+                                                   keep_classes=None, drop_classes=None,
+                                                   gas=None):
         """
         Load train/val/test splits and package them into the
         {"train": {"X":..., "y":...}, "val": {...}, "test": {...}}
