@@ -1026,6 +1026,7 @@ class GasClassification:
             print(f"=== {approach} ({n_max} feature counts) ===")
 
             for n in range(1, n_max + 1):
+                print(f"{approach}_{n}")
                 subset = ranked_list[:n]
                 clf = self.classifier_config(classifier_name)
                 clf.fit(data_init['train']['X'][subset], data_init['train']['y'])
