@@ -803,8 +803,8 @@ class GasClassification:
                 self.save_best_metrics(clf, data_init, feature_subset=None)
 
     def train_classifier(self, classifier_name="HistGradBoost", target='class', show=True, save=True,
-                          undersample=False, smote=True, adasyn=False, fold=0, feature_subset_path="/home/wp/Documents/GitHub/DataProcessing/GasExperiment/03_results/multivariate_ranked_features.csv",
-                          feature_column=None, n_features=100):
+                          undersample=False, smote=True, adasyn=False, fold=0, feature_subset_path="03_results/multivariate_ranked_features.csv",
+                          feature_column=None, n_features=None):
         """
         Train a classifier (configured via classifier_config). fold selects
         which split(s) to use:
