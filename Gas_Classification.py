@@ -312,7 +312,7 @@ class GasClassification:
         )
 
     def _train_classifier_single(self, classifier_name="HistGradBoost", target='class', show=True, save=True,
-                                  undersample=True, smote=False, adasyn=False, fold=None,
+                                  undersample=False, smote=False, adasyn=False, fold=None,
                                   feature_subset_path="", feature_column=None, n_features=None):
         """
         Train a classifier (configured via classifier_config), using

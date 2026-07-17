@@ -238,8 +238,8 @@ def load_and_process_data_for_classification(folds, apply_smote=False, apply_ada
     X_test, y_test = X_test[test_mask], y_test[test_mask]
 
     if scale:
-        X_train, X_val, X_test = min_max_scaling(X_train, X_val, X_test)
-        #X_train, X_val, X_test = robust_min_max_scaling(X_train, X_val, X_test)
+        #X_train, X_val, X_test = min_max_scaling(X_train, X_val, X_test)
+        X_train, X_val, X_test = robust_min_max_scaling(X_train, X_val, X_test)
 
     non_prestim_counts = y_train[y_train != 'prestimulus'].value_counts()
     prestim_cap = int(non_prestim_counts.max()) if not non_prestim_counts.empty else len(y_train)
