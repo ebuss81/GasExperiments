@@ -1,0 +1,101 @@
+Selected Features
+value__sum_values
+value__permutation_entropy__dimension_3__tau_1
+value__abs_energy
+value__mean_abs_change
+value__mean_second_derivative_central
+value__median
+value__mean
+value__standard_deviation
+value__variation_coefficient
+value__variance
+value__skewness
+value__kurtosis
+value__root_mean_square
+value__absolute_sum_of_changes
+value__sum_of_reoccurring_values
+value__sum_of_reoccurring_data_points
+value__maximum
+value__absolute_maximum
+value__time_reversal_asymmetry_statistic__lag_1
+value__time_reversal_asymmetry_statistic__lag_2
+value__time_reversal_asymmetry_statistic__lag_3
+value__c3__lag_1
+value__c3__lag_2
+value__c3__lag_3
+value__cid_ce__normalize_True
+value__cid_ce__normalize_False
+value__quantile__q_0.1
+value__quantile__q_0.2
+value__quantile__q_0.3
+value__quantile__q_0.4
+value__quantile__q_0.6
+value__quantile__q_0.7
+value__quantile__q_0.8
+value__quantile__q_0.9
+value__autocorrelation__lag_1
+value__autocorrelation__lag_2
+value__autocorrelation__lag_3
+value__autocorrelation__lag_4
+value__autocorrelation__lag_5
+value__autocorrelation__lag_6
+value__autocorrelation__lag_7
+value__autocorrelation__lag_8
+value__autocorrelation__lag_9
+"value__agg_autocorrelation__f_agg_""mean""__maxlag_40"
+"value__agg_autocorrelation__f_agg_""median""__maxlag_40"
+"value__agg_autocorrelation__f_agg_""var""__maxlag_40"
+value__partial_autocorrelation__lag_1
+value__partial_autocorrelation__lag_2
+value__partial_autocorrelation__lag_3
+value__partial_autocorrelation__lag_4
+value__partial_autocorrelation__lag_5
+value__partial_autocorrelation__lag_6
+value__partial_autocorrelation__lag_7
+value__partial_autocorrelation__lag_8
+value__partial_autocorrelation__lag_9
+value__binned_entropy__max_bins_10
+"value__cwt_coefficients__coeff_0__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_0__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_0__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_0__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_1__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_1__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_1__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_1__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_2__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_2__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_2__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_2__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_3__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_3__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_3__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_3__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_4__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_4__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_4__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_4__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_5__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_5__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_5__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_5__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_6__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_6__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_6__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_6__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_7__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_7__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_7__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_7__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_8__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_8__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_8__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_8__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_9__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_9__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_9__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_9__w_20__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_10__w_2__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_10__w_5__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_10__w_10__widths_(2, 5, 10, 20)"
+"value__cwt_coefficients__coeff_10__w_20__widths_(2, 5, 10, 20)"
