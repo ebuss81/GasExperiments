@@ -159,8 +159,8 @@ def robust_min_max_scaling(X_train, X_val, X_test, lower_quantile=0.25, upper_qu
 
 def load_and_process_data_for_classification(folds, apply_smote=False, apply_adasyn=False, scale=True,
                                                apply_undersample=False, impute=True, target='class', fold=None,
-                                               keep_classes=None, drop_classes=None,
-                                               gas=None):
+                                               keep_classes=['O3_post', 'prestimulus'] , drop_classes=None,
+                                               gas='O3'):
     """
     Load train/val/test splits (via folds, an ExperimentFolds instance)
     and package them into the {"train": {"X":..., "y":...}, "val": {...},

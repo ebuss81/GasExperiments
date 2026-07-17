@@ -214,7 +214,7 @@ class GasClassification:
                 self.save_best_metrics(clf, data_init, feature_subset=None)
 
     def train_classifier(self, classifier_name="HistGradBoost", target='class', show=True, save=True,
-                          undersample=False, smote=True, adasyn=False, fold=0, feature_subset_path=None,
+                          undersample=False, smote=False, adasyn=True, fold=0, feature_subset_path=None,
                           feature_column=None, n_features=None):
         """
         Train a classifier (configured via classifier_config). fold selects
