@@ -1009,7 +1009,7 @@ class Preprocess:
         print(self.experiment_config)
 
 
-    def get_10min_calc_features(self):
+    def get_10min_calc_features(self, background_subtraction=False):
         """
         Compute tsfresh time-series features on the CH1 signal for two
         10-minute sub-windows of every already-split EDP application window
@@ -1017,6 +1017,12 @@ class Preprocess:
         window start, prestimulus=True) and one right after (60-70 minutes,
         prestimulus=False) - and write one feature table per gas under
         features_path.
+
+        If background_subtraction is True, the median CH1 value of a third,
+        40-50 minute background sub-window is subtracted from the
+        prestimulus and poststimulus signal values before features are
+        extracted. The background sub-window itself is only used for this
+        correction and is never written out as its own feature row.
         """
         time_window_path = self.resolve_config_path(self.config_paths['time_window_path'])
         features_path = self.resolve_config_path(self.config_paths['features_path'])
@@ -1025,6 +1031,7 @@ class Preprocess:
         signal_column = 'CH1'
         sub_window_duration = timedelta(minutes=10)
         sub_windows = [
+            {'offset': timedelta(minutes=40), 'background': True},
             {'offset': timedelta(minutes=50), 'prestimulus': True},
             {'offset': timedelta(minutes=60), 'prestimulus': False},
         ]
@@ -1048,15 +1055,22 @@ class Preprocess:
                 return []
             window_start = df.index[0]
             rows = []
+            background_median = None
             for sub_window in sub_windows:
                 sub_start = window_start + sub_window['offset']
                 sub_end = sub_start + sub_window_duration
                 chunk = df[(df.index >= sub_start) & (df.index < sub_end)]
                 if chunk.empty:
                     continue
+                if sub_window.get('background'):
+                    background_median = chunk[signal_column].median()
+                    continue
+                values = chunk[signal_column].values
+                if background_subtraction and background_median is not None:
+                    values = values - background_median
                 rows.append(pd.DataFrame({
                     'datetime': chunk.index,
-                    'value': chunk[signal_column].values,
+                    'value': values,
                     'id': f"{node}|{window_start}|{signal_column}|{sub_start}|{sub_window['prestimulus']}",
                 }))
             return rows
@@ -1095,7 +1109,8 @@ class Preprocess:
             id_parts['prestimulus'] = id_parts['prestimulus'] == 'True'
             features = pd.concat([id_parts.reset_index(drop=True), features.reset_index(drop=True)], axis=1)
 
-            out = features_path / f"{gas}_10min_features.csv"
+            suffix = "_bgsub" if background_subtraction else ""
+            out = features_path / f"{gas}_10min_features{suffix}.csv"
             features.to_csv(out, index=False)
             print(f"Saved {out}")
 
@@ -1110,5 +1125,5 @@ if __name__ == "__main__":
     #pp.plot_EDP_individual(show=True, save=True)
     #pp.plot_O3_data(show=True, save=True)
     #pp.plot_EDP_stimulus_overlay(show=True, save=True)
-    pp.plot_EDP_stimulus_mean_std(show=True, save=True)
-    #pp.get_10min_calc_features()
+    #pp.plot_EDP_stimulus_mean_std(show=True, save=True)
+    pp.get_10min_calc_features(background_subtraction=True)

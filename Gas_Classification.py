@@ -71,7 +71,7 @@ class GasClassification:
         path = Path(path_value).expanduser()
         if path.is_absolute():
             return path
-        return self.base_dir / path
+        return self.base_dir / path / 'withBackgroundSubstraction'
 
     def read_experiment_config(self):
         with open(self.experiments_file, "r") as file:
@@ -803,7 +803,7 @@ class GasClassification:
                 self.save_best_metrics(clf, data_init, feature_subset=None)
 
     def train_classifier(self, classifier_name="HistGradBoost", target='class', show=True, save=True,
-                          undersample=False, smote=True, adasyn=False, fold=0, feature_subset_path="/home/wp/Documents/GitHub/DataProcessing/GasExperiment/03_results/multivariate_ranked_features.csv",
+                          undersample=False, smote=True, adasyn=False, fold=0, feature_subset_path="03_results/multivariate_ranked_features.csv",
                           feature_column=None, n_features=100):
         """
         Train a classifier (configured via classifier_config). fold selects
