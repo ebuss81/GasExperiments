@@ -11,6 +11,8 @@ from sklearn.base import clone
 import naiveautoml
 from naiveautoml.evaluators import SplitBasedEvaluator
 import matplotlib
+import autosklearn.classification
+
 try:
     matplotlib.use('Qt5Agg')
 except ImportError:
@@ -108,8 +110,28 @@ class GasClassification:
         logging.info(f"Saved metrics/classifier to {results_path}")
         return {'train': score_train, 'val': score_val, 'test': score_test}
 
+    @staticmethod
+    def _scope_suffix(gas, keep_classes, drop_classes):
+        """
+        Build a "_gas-.._keep-.."-style suffix from the classification
+        scope (gas/keep_classes/drop_classes, as passed to
+        load_and_process_data_for_classification), so results saved under
+        different scopes don't overwrite each other. Empty string if every
+        scope arg is None (unrestricted, multiclass).
+        """
+        parts = []
+        if gas is not None:
+            gas_label = gas if isinstance(gas, str) else "-".join(gas)
+            parts.append(f"gas-{gas_label}")
+        if keep_classes is not None:
+            parts.append(f"keep-{'-'.join(keep_classes)}")
+        elif drop_classes is not None:
+            parts.append(f"drop-{'-'.join(drop_classes)}")
+        return ("_" + "_".join(parts)) if parts else ""
+
     def auto_ml(self, train=False, save=False, undersample=False, smote=True, adasyn=False,
-                use_experiment_folds=True, target='class'):
+                use_experiment_folds=True, target='class',
+                keep_classes=['O3_post', 'prestimulus'], drop_classes=None, gas='O3'):
         """
         undersample/smote/adasyn are mutually exclusive resampling options for
         the training data before the AutoML search sees it - ignored when
@@ -121,10 +143,21 @@ class GasClassification:
         default random split - the search runs once and picks the pipeline
         that performs best across real held-out experiments, rather than
         training a new classifier per fold.
+
+        keep_classes/drop_classes/gas restrict the classification problem
+        the same way they do in load_and_process_data_for_classification
+        (default here: binary O3-vs-baseline, keep_classes=['O3_post',
+        'prestimulus'], gas='O3') - pass keep_classes=None, gas=None for
+        the full multiclass problem instead. Only applied when
+        use_experiment_folds=False, since _build_experiment_fold_indices
+        doesn't support this filtering. Whichever scope is passed is folded
+        into self.classifier_name (via _scope_suffix), so results/figures
+        from different scopes land in differently-named files instead of
+        overwriting each other.
         """
         metric = "f1_macro"
         logging.info("Starting Naive AutoML")
-        self.classifier_name = "NaiveAutoML"
+        self.classifier_name = "NaiveAutoML" + self._scope_suffix(gas, keep_classes, drop_classes)
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path']) / self.classifier_name
         results_path.mkdir(parents=True, exist_ok=True)
 
@@ -135,7 +168,8 @@ class GasClassification:
             data_init = {'train': {'X': X_all, 'y': y_all}}
         else:
             data_init, groups = utils.load_and_process_data_for_classification(
-                self.folds, apply_smote=smote, apply_adasyn=adasyn, scale=True, apply_undersample=undersample
+                self.folds, apply_smote=smote, apply_adasyn=adasyn, scale=True, apply_undersample=undersample,
+                keep_classes=keep_classes, drop_classes=drop_classes, gas=gas,
             )
         logging.info(np.unique(data_init["train"]["y"], return_counts=True))
 
@@ -548,9 +582,9 @@ if __name__ == "__main__":
     GC = GasClassification()
     #GC.folds.make_experiment_cv_folds()
     #GC.folds.make_data_set()
-    for classifier in ["TabPFN"]:#["AutoML"]:#"HGB", "RF", "ETC"]:TabICL
-        GC.train_classifier(classifier, feature_column="cmim")
-    #GC.auto_ml(train=True, save=True)
+    #for classifier in ["TabPFN"]:#["AutoML"]:#"HGB", "RF", "ETC"]:TabICL
+    #    GC.train_classifier(classifier, feature_column="cmim")
+    GC.auto_ml(train=True, save=True)
     #GC.train_classifier_feature_subset()
     #GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True)
     #GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
