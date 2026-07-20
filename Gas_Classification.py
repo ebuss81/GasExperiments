@@ -220,6 +220,39 @@ class GasClassification:
                              f"Mean +/- std: {fold_scores.mean():.4f} +/- {fold_scores.std():.4f}")
                 fold_scores.to_csv(results_path / f"{self.classifier_name}_experiment_fold_scores.csv")
 
+                # Best-found-classifier performance/confusion matrix on
+                # fold 0 specifically - a concrete, inspectable example
+                # fold to go with the aggregate fold_scores above.
+                figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
+                figures_path.mkdir(parents=True, exist_ok=True)
+                fold0_name = f"{self.classifier_name}_fold0"
+                train_idx0, test_idx0 = fold_index_pairs[0]
+                fold0_clf = clone(best_pipeline_loaded)
+                fold0_clf.fit(data_init["train"]["X"].iloc[train_idx0], data_init["train"]["y"].iloc[train_idx0])
+
+                fold0_scores = {}
+                for split_name, idx in (('train', train_idx0), ('test', test_idx0)):
+                    X_split = data_init["train"]["X"].iloc[idx]
+                    y_split = data_init["train"]["y"].iloc[idx]
+                    y_pred = fold0_clf.predict(X_split)
+                    score = fold0_clf.score(X_split, y_split)
+                    fold0_scores[split_name] = score
+                    logging.info(f"[{fold0_name}] {split_name.capitalize()} accuracy: {score:.4f}")
+                    logging.info("\n" + classification_report(y_split, y_pred))
+
+                    cm = confusion_matrix(y_split, y_pred, labels=fold0_clf.classes_)
+                    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=fold0_clf.classes_)
+                    fig, ax = plt.subplots(figsize=(7, 6))
+                    disp.plot(ax=ax, xticks_rotation=45, colorbar=True)
+                    ax.set_title(f"{fold0_name} — {split_name} confusion matrix")
+                    fig.tight_layout()
+                    fig.savefig(figures_path / f"{fold0_name}_{split_name}_confusion_matrix.png", dpi=150)
+                    plt.close(fig)
+
+                pd.Series(fold0_scores, name='accuracy').to_csv(results_path / f"{fold0_name}_scores.csv")
+                dump(fold0_clf, results_path / f"{fold0_name}_classifier.joblib")
+                logging.info(f"Saved fold-0 classifier/metrics (prefix {fold0_name}) to {results_path}")
+
                 final_clf = clone(best_pipeline_loaded)
                 final_clf.fit(data_init["train"]["X"], data_init["train"]["y"])
                 out = results_path / f"{self.classifier_name}_final_classifier.joblib"
