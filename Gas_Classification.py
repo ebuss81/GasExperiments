@@ -148,12 +148,14 @@ class GasClassification:
         the same way they do in load_and_process_data_for_classification
         (default here: binary O3-vs-baseline, keep_classes=['O3_post',
         'prestimulus'], gas='O3') - pass keep_classes=None, gas=None for
-        the full multiclass problem instead. Only applied when
-        use_experiment_folds=False, since _build_experiment_fold_indices
-        doesn't support this filtering. Whichever scope is passed is folded
-        into self.classifier_name (via _scope_suffix), so results/figures
-        from different scopes land in differently-named files instead of
-        overwriting each other.
+        the full multiclass problem instead. Applied consistently whichever
+        branch runs: to every dev fold and the final held-out test set via
+        ExperimentFolds._build_experiment_fold_indices when
+        use_experiment_folds=True, or via
+        utils.load_and_process_data_for_classification otherwise. Whichever
+        scope is passed is folded into self.classifier_name (via
+        _scope_suffix), so results/figures from different scopes land in
+        differently-named files instead of overwriting each other.
         """
         metric = "f1_macro"
         logging.info("Starting Naive AutoML")
@@ -164,7 +166,9 @@ class GasClassification:
         fold_index_pairs = None
         X_test = y_test = None
         if use_experiment_folds:
-            X_all, y_all, fold_index_pairs, X_test, y_test = self.folds._build_experiment_fold_indices(target=target)
+            X_all, y_all, fold_index_pairs, X_test, y_test = self.folds._build_experiment_fold_indices(
+                target=target, keep_classes=keep_classes, drop_classes=drop_classes, gas=gas,
+            )
             data_init = {'train': {'X': X_all, 'y': y_all}}
         else:
             data_init, groups = utils.load_and_process_data_for_classification(

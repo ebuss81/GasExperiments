@@ -229,7 +229,7 @@ class ExperimentFolds:
 
         return fold_dirs
 
-    def _build_experiment_fold_indices(self, target='class'):
+    def _build_experiment_fold_indices(self, target='class', keep_classes=None, drop_classes=None, gas=None):
         """
         Reserve the first experiment listed for each gas (index 0 - the same
         experiments make_data_set holds out as its final test set) as a
@@ -237,6 +237,14 @@ class ExperimentFolds:
         search. The *remaining* experiments (index 1..n-1 per gas) form the
         dev pool, which is split into leave-one-experiment-out-per-gas folds
         for naiveautoml's custom evaluator to use during model selection.
+
+        keep_classes/drop_classes/gas restrict the classification problem
+        the same way they do in utils.load_and_process_data_for_classification
+        (e.g. keep_classes=['O3_post', 'prestimulus'], gas='O3' for a binary
+        O3-vs-baseline problem) - applied once, right after loading, so
+        every dev fold *and* the final held-out test set only ever see rows
+        inside that scope; excluded gases simply contribute no rows to any
+        fold's held-out mask below.
 
         Returns (X_dev, y_dev, fold_index_pairs, X_test, y_test):
         - X_dev/y_dev: every row not in the reserved test experiments,
@@ -258,6 +266,18 @@ class ExperimentFolds:
         rows only, with no leakage.
         """
         data, groups = self._load_labeled_data(target=target)
+
+        gases_to_keep = [gas] if isinstance(gas, str) else gas
+        if keep_classes is not None:
+            scope_mask = data[target].isin(keep_classes)
+        elif drop_classes is not None:
+            scope_mask = ~data[target].isin(drop_classes)
+        else:
+            scope_mask = pd.Series(True, index=data.index)
+        if gases_to_keep is not None:
+            scope_mask &= data['gas'].isin(gases_to_keep)
+        data = data[scope_mask].reset_index(drop=True)
+
         window_start_dt = pd.to_datetime(data['window_start'])
 
         y_full = data[target]
