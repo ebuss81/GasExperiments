@@ -225,37 +225,52 @@ class GasClassification:
                 fold_scores.to_csv(results_path / f"{self.classifier_name}_experiment_fold_scores.csv")
 
                 # Best-found-classifier performance/confusion matrix on
-                # fold 0 specifically - a concrete, inspectable example
-                # fold to go with the aggregate fold_scores above.
-                figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
-                figures_path.mkdir(parents=True, exist_ok=True)
-                fold0_name = f"{self.classifier_name}_fold0"
+                # fold 0 specifically, logged/saved exactly like
+                # _train_classifier_single does per split (plots) and via
+                # save_best_metrics (classification report + confusion
+                # matrix CSV + classifier dump) - a concrete, inspectable
+                # fold to go with the aggregate fold_scores above. A single
+                # CV fold only has train/held-out (no separate val), so
+                # held-out rows are used for both the 'val' and 'test' keys
+                # save_best_metrics expects.
+                base_classifier_name = self.classifier_name
+                self.classifier_name = f"{base_classifier_name}_fold0"
                 train_idx0, test_idx0 = fold_index_pairs[0]
                 fold0_clf = clone(best_pipeline_loaded)
                 fold0_clf.fit(data_init["train"]["X"].iloc[train_idx0], data_init["train"]["y"].iloc[train_idx0])
 
-                fold0_scores = {}
-                for split_name, idx in (('train', train_idx0), ('test', test_idx0)):
-                    X_split = data_init["train"]["X"].iloc[idx]
-                    y_split = data_init["train"]["y"].iloc[idx]
+                fold0_held_out = {
+                    'X': data_init["train"]["X"].iloc[test_idx0], 'y': data_init["train"]["y"].iloc[test_idx0]
+                }
+                fold0_data = {
+                    'train': {'X': data_init["train"]["X"].iloc[train_idx0],
+                              'y': data_init["train"]["y"].iloc[train_idx0]},
+                    'val': fold0_held_out,
+                    'test': fold0_held_out,
+                }
+
+                figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
+                figures_path.mkdir(parents=True, exist_ok=True)
+                for split_name in ('train', 'val'):
+                    X_split, y_split = fold0_data[split_name]['X'], fold0_data[split_name]['y']
                     y_pred = fold0_clf.predict(X_split)
-                    score = fold0_clf.score(X_split, y_split)
-                    fold0_scores[split_name] = score
-                    logging.info(f"[{fold0_name}] {split_name.capitalize()} accuracy: {score:.4f}")
-                    logging.info("\n" + classification_report(y_split, y_pred))
+                    print(f"[{self.classifier_name}] {split_name.capitalize()} accuracy: "
+                          f"{fold0_clf.score(X_split, y_split):.4f}")
+                    print(classification_report(y_split, y_pred))
 
                     cm = confusion_matrix(y_split, y_pred, labels=fold0_clf.classes_)
                     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=fold0_clf.classes_)
                     fig, ax = plt.subplots(figsize=(7, 6))
                     disp.plot(ax=ax, xticks_rotation=45, colorbar=True)
-                    ax.set_title(f"{fold0_name} — {split_name} confusion matrix")
+                    ax.set_title(f"{self.classifier_name} — {split_name} confusion matrix")
                     fig.tight_layout()
-                    fig.savefig(figures_path / f"{fold0_name}_{split_name}_confusion_matrix.png", dpi=150)
+                    out = figures_path / f"{self.classifier_name}_{split_name}_confusion_matrix.png"
+                    fig.savefig(out, dpi=150)
+                    print(f"Saved {out}")
                     plt.close(fig)
 
-                pd.Series(fold0_scores, name='accuracy').to_csv(results_path / f"{fold0_name}_scores.csv")
-                dump(fold0_clf, results_path / f"{fold0_name}_classifier.joblib")
-                logging.info(f"Saved fold-0 classifier/metrics (prefix {fold0_name}) to {results_path}")
+                self.save_best_metrics(fold0_clf, fold0_data, feature_subset=None)
+                self.classifier_name = base_classifier_name
 
                 final_clf = clone(best_pipeline_loaded)
                 final_clf.fit(data_init["train"]["X"], data_init["train"]["y"])
