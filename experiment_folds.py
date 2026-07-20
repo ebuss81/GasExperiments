@@ -255,10 +255,13 @@ class ExperimentFolds:
         - X_test/y_test: rows from the reserved (index 0) experiment per
           gas - never touched by any fold, for a final one-shot evaluation.
 
-        Columns are median-imputed globally (not per-fold/split) purely so
-        NaN-intolerant sklearn components in naiveautoml's search space don't
-        crash - a minor, disclosed simplification (per-fold-train-only
-        imputation would need a custom pipeline step). Scaling is
+        Columns are median-imputed on the dev pool as a whole (fit once on
+        X_dev, applied to X_dev and X_test - not per-fold/split within
+        X_dev) purely so NaN-intolerant sklearn components in naiveautoml's
+        search space don't crash - a minor, disclosed simplification
+        (per-fold-train-only imputation would need a custom pipeline step).
+        The reserved test experiments never contribute to the fitted
+        medians. Scaling is
         intentionally NOT done here: naiveautoml's own candidate pipelines
         already search over data-pre-processor components (MinMaxScaler,
         ...), and its evaluator clones + refits the whole pipeline per fold -
@@ -285,10 +288,6 @@ class ExperimentFolds:
                          'prestimulus', target]
         X_full = data.drop(columns=[c for c in meta_columns if c in data.columns])
 
-        imputer = SimpleImputer(strategy='median')
-        X_full = pd.DataFrame(imputer.fit_transform(X_full), columns=imputer.get_feature_names_out(X_full.columns),
-                               index=X_full.index)
-
         # Reserve experiment index 0 per gas as the final, untouched test
         # set - the same experiments make_data_set holds out.
         final_test_mask = pd.Series(False, index=data.index)
@@ -299,11 +298,21 @@ class ExperimentFolds:
             final_test_mask |= gas_mask
 
         dev_mask = ~final_test_mask
-        X_test, y_test = X_full[final_test_mask], y_full[final_test_mask]
-        X_dev = X_full[dev_mask].reset_index(drop=True)
+        X_test_raw, y_test = X_full[final_test_mask], y_full[final_test_mask]
+        X_dev_raw = X_full[dev_mask].reset_index(drop=True)
         y_dev = y_full[dev_mask].reset_index(drop=True)
         dev_data = data[dev_mask].reset_index(drop=True)
         dev_window_start_dt = window_start_dt[dev_mask].reset_index(drop=True)
+
+        # Impute fit on the dev pool only, then applied to the reserved
+        # test rows too - fitting on X_full (before this split) would leak
+        # the held-out test experiments' values into the median used to
+        # fill NaNs in dev/train data (and vice versa).
+        imputer = SimpleImputer(strategy='median')
+        X_dev = pd.DataFrame(imputer.fit_transform(X_dev_raw), columns=imputer.get_feature_names_out(X_dev_raw.columns),
+                              index=X_dev_raw.index)
+        X_test = pd.DataFrame(imputer.transform(X_test_raw), columns=imputer.get_feature_names_out(X_dev_raw.columns),
+                               index=X_test_raw.index)
 
         # Fold over the remaining (dev) experiments only - index 1..n-1 per gas.
         n_folds = max(len(self.experiment_config[gas]) - 1 for gas in self.gases)

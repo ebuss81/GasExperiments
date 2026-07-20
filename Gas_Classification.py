@@ -278,13 +278,48 @@ class GasClassification:
                 dump(final_clf, out)
 
                 # Final one-shot check on the reserved test experiments -
-                # never used by the search or any dev fold.
+                # never used by the search, any dev fold, or (since the
+                # imputer fix) even preprocessing. Unlike fold_scores/fold0
+                # above, this is a clean generalization estimate: final_clf
+                # was fit on all dev data, and X_test/y_test never
+                # influenced pipeline selection - so it gets the same
+                # classification_report/confusion-matrix/save_best_metrics
+                # treatment as fold0, not just a bare accuracy number.
                 held_out_test_score = final_clf.score(X_test, y_test)
                 logging.info(f"Held-out test accuracy (final classifier, never seen during search): "
                              f"{held_out_test_score:.4f}")
                 pd.Series({'held_out_test_accuracy': held_out_test_score}).to_csv(
                     results_path / f"{self.classifier_name}_held_out_test_score.csv"
                 )
+
+                held_out_data = {'X': X_test, 'y': y_test}
+                final_data = {
+                    'train': {'X': data_init["train"]["X"], 'y': data_init["train"]["y"]},
+                    'val': held_out_data,
+                    'test': held_out_data,
+                }
+                self.classifier_name = f"{base_classifier_name}_final"
+                for split_name in ('train', 'val'):
+                    X_split, y_split = final_data[split_name]['X'], final_data[split_name]['y']
+                    y_pred = final_clf.predict(X_split)
+                    print(f"[{self.classifier_name}] {split_name.capitalize()} accuracy: "
+                          f"{final_clf.score(X_split, y_split):.4f}")
+                    print(classification_report(y_split, y_pred))
+
+                    cm = confusion_matrix(y_split, y_pred, labels=final_clf.classes_)
+                    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=final_clf.classes_)
+                    fig, ax = plt.subplots(figsize=(7, 6))
+                    disp.plot(ax=ax, xticks_rotation=45, colorbar=True)
+                    ax.set_title(f"{self.classifier_name} — {split_name} confusion matrix")
+                    fig.tight_layout()
+                    out_fig = figures_path / f"{self.classifier_name}_{split_name}_confusion_matrix.png"
+                    fig.savefig(out_fig, dpi=150)
+                    print(f"Saved {out_fig}")
+                    plt.close(fig)
+
+                self.save_best_metrics(final_clf, final_data, feature_subset=None)
+                self.classifier_name = base_classifier_name
+
                 logging.info(f"Saved final classifier (refit on all dev data) to {out}")
             else:
                 clf = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
