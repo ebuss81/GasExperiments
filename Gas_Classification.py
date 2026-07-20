@@ -11,7 +11,7 @@ from sklearn.base import clone
 import naiveautoml
 from naiveautoml.evaluators import SplitBasedEvaluator
 import matplotlib
-import autosklearn.classification
+
 
 try:
     matplotlib.use('Qt5Agg')
@@ -182,7 +182,7 @@ class GasClassification:
                 )
 
             naml = naiveautoml.NaiveAutoML(
-                scoring=metric, passive_scorings= ["accuracy", "neg_log_loss"], show_progress=True, max_hpo_iterations=10,  # 100 before
+                scoring=metric, passive_scorings= ["accuracy", "neg_log_loss"], show_progress=True, max_hpo_iterations=100,  # 100 before
                 evaluation_fun=evaluation_fun,
                 kwargs_as={"excluded_components": {
                     "feature-pre-processor": ["GenericUnivariateSelect"],
