@@ -4,6 +4,27 @@ from sklearn.impute import SimpleImputer
 from imblearn.over_sampling import SMOTE, ADASYN
 
 
+def scope_suffix(gas, keep_classes, drop_classes):
+    """
+    Build a "_gas-.._keep-.."-style suffix from a classification scope
+    (gas/keep_classes/drop_classes, as passed to
+    load_and_process_data_for_classification), so results saved under
+    different scopes don't overwrite each other. Empty string if every
+    scope arg is None (unrestricted, multiclass). Shared by
+    Gas_Classification.py and FeatureSelection.py so both name their
+    outputs the same way for the same scope.
+    """
+    parts = []
+    if gas is not None:
+        gas_label = gas if isinstance(gas, str) else "-".join(gas)
+        parts.append(f"gas-{gas_label}")
+    if keep_classes is not None:
+        parts.append(f"keep-{'-'.join(keep_classes)}")
+    elif drop_classes is not None:
+        parts.append(f"drop-{'-'.join(drop_classes)}")
+    return ("_" + "_".join(parts)) if parts else ""
+
+
 def undersample(X, y, exclude_class='prestimulus', random_state=42):
     """
     Downsample every class down to the size of the largest class other

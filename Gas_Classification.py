@@ -110,25 +110,6 @@ class GasClassification:
         logging.info(f"Saved metrics/classifier to {results_path}")
         return {'train': score_train, 'val': score_val, 'test': score_test}
 
-    @staticmethod
-    def _scope_suffix(gas, keep_classes, drop_classes):
-        """
-        Build a "_gas-.._keep-.."-style suffix from the classification
-        scope (gas/keep_classes/drop_classes, as passed to
-        load_and_process_data_for_classification), so results saved under
-        different scopes don't overwrite each other. Empty string if every
-        scope arg is None (unrestricted, multiclass).
-        """
-        parts = []
-        if gas is not None:
-            gas_label = gas if isinstance(gas, str) else "-".join(gas)
-            parts.append(f"gas-{gas_label}")
-        if keep_classes is not None:
-            parts.append(f"keep-{'-'.join(keep_classes)}")
-        elif drop_classes is not None:
-            parts.append(f"drop-{'-'.join(drop_classes)}")
-        return ("_" + "_".join(parts)) if parts else ""
-
     def auto_ml(self, train=False, save=False, undersample=False, smote=True, adasyn=False,
                 use_experiment_folds=True, target='class',
                 keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2'):
@@ -154,12 +135,12 @@ class GasClassification:
         use_experiment_folds=True, or via
         utils.load_and_process_data_for_classification otherwise. Whichever
         scope is passed is folded into self.classifier_name (via
-        _scope_suffix), so results/figures from different scopes land in
-        differently-named files instead of overwriting each other.
+        utils.scope_suffix), so results/figures from different scopes land
+        in differently-named files instead of overwriting each other.
         """
         metric = "f1_macro"
         logging.info("Starting Naive AutoML")
-        self.classifier_name = "NaiveAutoML" + self._scope_suffix(gas, keep_classes, drop_classes)
+        self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path']) / self.classifier_name
         results_path.mkdir(parents=True, exist_ok=True)
 
@@ -211,93 +192,32 @@ class GasClassification:
         if save:
             if use_experiment_folds:
                 best_pipeline_loaded = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
-                fold_scores = []
-                for train_idx, test_idx in fold_index_pairs:
-                    pl = clone(best_pipeline_loaded)
-                    pl.fit(data_init["train"]["X"].iloc[train_idx], data_init["train"]["y"].iloc[train_idx])
-                    fold_scores.append(
-                        pl.score(data_init["train"]["X"].iloc[test_idx], data_init["train"]["y"].iloc[test_idx])
-                    )
-                fold_scores = pd.Series(fold_scores, name='accuracy')
-                fold_scores.index.name = 'fold'
-                logging.info(f"Cross-validated dev-fold accuracy (chosen pipeline): {fold_scores.tolist()} \n"
-                             f"Mean +/- std: {fold_scores.mean():.4f} +/- {fold_scores.std():.4f}")
-                fold_scores.to_csv(results_path / f"{self.classifier_name}_experiment_fold_scores.csv")
 
-                # Best-found-classifier performance/confusion matrix on
-                # fold 0 specifically, logged/saved exactly like
-                # _train_classifier_single does per split (plots) and via
-                # save_best_metrics (classification report + confusion
-                # matrix CSV + classifier dump) - a concrete, inspectable
-                # fold to go with the aggregate fold_scores above. A single
-                # CV fold only has train/held-out (no separate val), so
-                # held-out rows are used for both the 'val' and 'test' keys
-                # save_best_metrics expects.
                 base_classifier_name = self.classifier_name
-                self.classifier_name = f"{base_classifier_name}_fold0"
-                train_idx0, test_idx0 = fold_index_pairs[0]
-                fold0_clf = clone(best_pipeline_loaded)
-                fold0_clf.fit(data_init["train"]["X"].iloc[train_idx0], data_init["train"]["y"].iloc[train_idx0])
-
-                fold0_held_out = {
-                    'X': data_init["train"]["X"].iloc[test_idx0], 'y': data_init["train"]["y"].iloc[test_idx0]
-                }
-                fold0_data = {
-                    'train': {'X': data_init["train"]["X"].iloc[train_idx0],
-                              'y': data_init["train"]["y"].iloc[train_idx0]},
-                    'val': fold0_held_out,
-                    'test': fold0_held_out,
-                }
-
-                figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
-                figures_path.mkdir(parents=True, exist_ok=True)
-                for split_name in ('train', 'val'):
-                    X_split, y_split = fold0_data[split_name]['X'], fold0_data[split_name]['y']
-                    y_pred = fold0_clf.predict(X_split)
-                    print(f"[{self.classifier_name}] {split_name.capitalize()} accuracy: "
-                          f"{fold0_clf.score(X_split, y_split):.4f}")
-                    print(classification_report(y_split, y_pred))
-
-                    cm = confusion_matrix(y_split, y_pred, labels=fold0_clf.classes_)
-                    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=fold0_clf.classes_)
-                    fig, ax = plt.subplots(figsize=(7, 6))
-                    disp.plot(ax=ax, xticks_rotation=45, colorbar=True)
-                    ax.set_title(f"{self.classifier_name} — {split_name} confusion matrix")
-                    fig.tight_layout()
-                    out = figures_path / f"{self.classifier_name}_{split_name}_confusion_matrix.png"
-                    fig.savefig(out, dpi=150)
-                    print(f"Saved {out}")
-                    plt.close(fig)
-
-                self.save_best_metrics(fold0_clf, fold0_data, feature_subset=None)
-                self.classifier_name = base_classifier_name
-
                 final_clf = clone(best_pipeline_loaded)
                 final_clf.fit(data_init["train"]["X"], data_init["train"]["y"])
-                out = results_path / f"{self.classifier_name}_final_classifier.joblib"
+                out = results_path / f"{base_classifier_name}_final_classifier.joblib"
                 dump(final_clf, out)
 
-                # Final one-shot check on the reserved test experiments -
-                # never used by the search, any dev fold, or (since the
-                # imputer fix) even preprocessing. Unlike fold_scores/fold0
-                # above, this is a clean generalization estimate: final_clf
-                # was fit on all dev data, and X_test/y_test never
-                # influenced pipeline selection - so it gets the same
-                # classification_report/confusion-matrix/save_best_metrics
-                # treatment as fold0, not just a bare accuracy number.
-                held_out_test_score = final_clf.score(X_test, y_test)
-                logging.info(f"Held-out test accuracy (final classifier, never seen during search): "
-                             f"{held_out_test_score:.4f}")
-                pd.Series({'held_out_test_accuracy': held_out_test_score}).to_csv(
-                    results_path / f"{self.classifier_name}_held_out_test_score.csv"
-                )
-
+                # Performance on the reserved test experiments - never used
+                # by the search, any dev fold, or (since the imputer fix)
+                # even preprocessing, so this is a clean generalization
+                # estimate. A per-fold refit/score wouldn't be: every fold
+                # in fold_index_pairs was already used by naiveautoml's own
+                # search (evaluation_fun=SplitBasedEvaluator over those same
+                # folds), and its aggregate score is already on the
+                # leaderboard - so there's nothing to gain by recomputing
+                # it here. Reported/saved the same way
+                # _train_classifier_single does per split, via
+                # save_best_metrics.
                 held_out_data = {'X': X_test, 'y': y_test}
                 final_data = {
                     'train': {'X': data_init["train"]["X"], 'y': data_init["train"]["y"]},
                     'val': held_out_data,
                     'test': held_out_data,
                 }
+                figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
+                figures_path.mkdir(parents=True, exist_ok=True)
                 self.classifier_name = f"{base_classifier_name}_final"
                 for split_name in ('train', 'val'):
                     X_split, y_split = final_data[split_name]['X'], final_data[split_name]['y']
@@ -319,7 +239,6 @@ class GasClassification:
 
                 self.save_best_metrics(final_clf, final_data, feature_subset=None)
                 self.classifier_name = base_classifier_name
-
                 logging.info(f"Saved final classifier (refit on all dev data) to {out}")
             else:
                 clf = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
@@ -671,14 +590,18 @@ if __name__ == "__main__":
     #GC.folds.make_data_set()
     #for classifier in ["TabPFN"]:#["AutoML"]:#"HGB", "RF", "ETC"]:TabICL
     #    GC.train_classifier(classifier, feature_column="cmim")
-    GC.auto_ml(train=True, save=True)
+    #GC.auto_ml(train=True, save=True)
     #GC.train_classifier_feature_subset()
     #GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True)
     #GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
-    #data_init, groups = utils.load_and_process_data_for_classification(GC.folds, apply_smote=False, scale=True)
-    #fs = FeatureSelection()
-    #fs.apply_feature_selection(data_init, groups, save=True)
+
+    data_init, groups = utils.load_and_process_data_for_classification(
+        GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
+        keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2',
+    )
+    fs = FeatureSelection()
+    fs.apply_univariate_feature_selection(data_init, groups, save=True)
     #fs.aggregate_features(majority_voting=True, rank_aggregation=True, use_mrmr=True)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True)

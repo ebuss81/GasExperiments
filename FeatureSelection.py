@@ -7,12 +7,24 @@ from sklearn.feature_selection import (
     SelectKBest,
     f_classif,
     f_regression,
-    chi2,
     mutual_info_classif,
     mutual_info_regression
 )
 from skfeature.function.information_theoretical_based import JMI, CMIM
+from skfeature.function.similarity_based.reliefF import reliefF
+import utils
 
+
+def relief_score(X, y):
+    """
+    SelectKBest-compatible wrapper around skfeature's reliefF: it defaults
+    to returning a rank-index array (mode="rank"), but SelectKBest expects
+    a raw per-feature score array (mode="raw") to fill its .scores_.
+    Nearest-neighbor based, so - unlike chi2 - it doesn't assume
+    non-negative/categorical features, and picks up feature interactions
+    chi2/anova/mutual_info miss.
+    """
+    return reliefF(np.asarray(X), np.asarray(y), mode="raw")
 
 
 class FeatureSelection:
@@ -29,7 +41,7 @@ class FeatureSelection:
         self.selectors = {
             "mutual_info": mutual_info_classif,
             "anova": f_classif,
-            "chi2": chi2,
+            "relief": relief_score,
         }
 
 
@@ -39,7 +51,26 @@ class FeatureSelection:
             return path
         return self.base_dir / path
 
-    def apply_feature_selection(self, data, groups, save):
+    def feature_selection_results_path(self):
+        """
+        results_path/03_01_feature_selection - every ranked-features file
+        this class reads/writes lives under here, instead of directly in
+        results_path, so feature-selection output is grouped separately
+        from classifier results.
+        """
+        path = self.resolve_config_path(self.config_paths['results_path']) / "03_01_feature_selection"
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def apply_univariate_feature_selection(self, data, groups, save, keep_classes=None, drop_classes=None, gas=None):
+        """
+        keep_classes/drop_classes/gas should be the same scope `data` was
+        already restricted to upstream (e.g. by
+        utils.load_and_process_data_for_classification) - they don't
+        filter anything here, they're only used (via utils.scope_suffix)
+        to name the saved file so different scopes don't overwrite each
+        other's ranking.
+        """
         X_train = data["train"]["X"]
         y_train = data["train"]["y"]
 
@@ -58,25 +89,36 @@ class FeatureSelection:
         print(ranked_df)
 
         if save:
-            results_path = self.resolve_config_path(self.config_paths['results_path'])
-            results_path.mkdir(parents=True, exist_ok=True)
-            out = results_path / "univariate_ranked_features.csv"
+            results_path = self.feature_selection_results_path()
+            suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
+            out = results_path / f"univariate_ranked_features{suffix}.csv"
             ranked_df.to_csv(out)
             print(f"Saved {out}")
 
         return ranked_df
     
-    def aggregate_features(self, majority_voting=True, rank_aggregation=False, use_mrmr=False):
+    def aggregate_features(self, majority_voting=True, rank_aggregation=False, use_mrmr=False,
+                            keep_classes=None, drop_classes=None, gas=None):
         """
         use_mrmr=False (default) aggregates the plain univariate rankings
         from apply_feature_selection (ranked_features.csv). use_mrmr=True
         aggregates the redundancy-aware rankings from apply_mrmr
         (mrmr_ranked_features.csv) instead. Output files are named
         accordingly so the two don't overwrite each other.
+
+        keep_classes/drop_classes/gas must match whatever scope the source
+        ranking file was saved with (see apply_feature_selection/apply_mrmr)
+        so the right (scope-suffixed) file is read/written here too.
         """
-        results_path = self.resolve_config_path(self.config_paths['results_path'])
+        results_path = self.feature_selection_results_path()
+        suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
         prefix = "mrmr_" if use_mrmr else ""
-        source = results_path / f"{prefix}ranked_features.csv"
+        # apply_mrmr saves "mrmr_ranked_features..." (matches prefix +
+        # "ranked_features..." for use_mrmr=True) but apply_feature_selection
+        # saves "univariate_ranked_features..." (not "ranked_features...")
+        # for use_mrmr=False.
+        source_name = f"mrmr_ranked_features{suffix}.csv" if use_mrmr else f"univariate_ranked_features{suffix}.csv"
+        source = results_path / source_name
         ranked_features = pd.read_csv(source, index_col=0)
         # apply_feature_selection also saves a "<test>_score" column next
         # to each "<test>" feature-name column - only the feature-name
@@ -94,7 +136,7 @@ class FeatureSelection:
             for idx, (feature, count) in enumerate(occurrences.items()):
                 print(f"{idx}, {feature}: {count}")
 
-            out = results_path / f"{prefix}majority_voting_features.csv"
+            out = results_path / f"{prefix}majority_voting_features{suffix}.csv"
             occurrences.rename("count").rename_axis("feature").to_csv(out)
             print(f"Saved {out}")
 
@@ -111,11 +153,12 @@ class FeatureSelection:
             for idx, (feature, rank) in enumerate(avg_rank.items()):
                 print(f"{idx}, {feature}: {rank:.2f}")
 
-            out = results_path / f"{prefix}rank_aggregation_features.csv"
+            out = results_path / f"{prefix}rank_aggregation_features{suffix}.csv"
             avg_rank.to_csv(out)
             print(f"Saved {out}")
 
-    def combine_majority_rank_aggregation(self, use_mrmr=False, save=True):
+    def combine_majority_rank_aggregation(self, use_mrmr=False, save=True,
+                                           keep_classes=None, drop_classes=None, gas=None):
         """
         majority_voting_features.csv (feature, count) and
         rank_aggregation_features.csv (feature, avg_rank) are both
@@ -128,12 +171,17 @@ class FeatureSelection:
         accuracy-vs-features plot the same way any other ranked-features
         file is. majority_voting is typically much shorter (only features
         that >1 test agreed on) - it's padded with NaN past that point.
+
+        keep_classes/drop_classes/gas must match whatever scope
+        aggregate_features was called with, so the right (scope-suffixed)
+        files are read/written here too.
         """
-        results_path = self.resolve_config_path(self.config_paths['results_path'])
+        results_path = self.feature_selection_results_path()
+        suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
         prefix = "mrmr_" if use_mrmr else ""
 
-        majority = pd.read_csv(results_path / f"{prefix}majority_voting_features.csv")
-        rank_agg = pd.read_csv(results_path / f"{prefix}rank_aggregation_features.csv")
+        majority = pd.read_csv(results_path / f"{prefix}majority_voting_features{suffix}.csv")
+        rank_agg = pd.read_csv(results_path / f"{prefix}rank_aggregation_features{suffix}.csv")
 
         combined = pd.DataFrame({
             "majority_voting": majority["feature"],
@@ -144,7 +192,7 @@ class FeatureSelection:
         print(combined)
 
         if save:
-            out = results_path / f"{prefix}majority_rank_ranked_features.csv"
+            out = results_path / f"{prefix}majority_rank_ranked_features{suffix}.csv"
             combined.to_csv(out)
             print(f"Saved {out}")
 
@@ -152,19 +200,19 @@ class FeatureSelection:
 
     def _relevance(self, X_train, y_train, score_func):
         """
-        Relevance scores from `score_func` (any sklearn univariate scorer -
-        mutual_info_classif, f_classif, chi2, ...), min-max normalized to
-        [0, 1]. F/chi2 statistics are unbounded and often huge, while
-        redundancy (abs correlation, used downstream) is capped at 1 -
-        without this normalization, relevance would completely dominate any
-        (relevance - redundancy) combination regardless of which score_func
-        is used. +-inf (e.g. a near-zero-variance-within-class ANOVA
-        blowup) is clipped to the max/min finite score first so it doesn't
-        wreck the normalization.
+        Relevance scores from `score_func` (any SelectKBest-compatible
+        scorer - mutual_info_classif, f_classif, relief_score, ...),
+        min-max normalized to [0, 1]. F statistics are unbounded and often
+        huge, while redundancy (abs correlation, used downstream) is capped
+        at 1 - without this normalization, relevance would completely
+        dominate any (relevance - redundancy) combination regardless of
+        which score_func is used. +-inf (e.g. a near-zero-variance-within-
+        class ANOVA blowup) is clipped to the max/min finite score first so
+        it doesn't wreck the normalization.
         """
-        # SelectKBest normalizes the scorer's output (some, like f_classif
-        # and chi2, return a (scores, p-values) tuple) into a flat
-        # .scores_ array regardless of which score_func is used.
+        # SelectKBest normalizes the scorer's output (some, like f_classif,
+        # return a (scores, p-values) tuple) into a flat .scores_ array
+        # regardless of which score_func is used.
         relevance = pd.Series(
             SelectKBest(score_func, k='all').fit(X_train, y_train).scores_, index=X_train.columns
         )
@@ -224,13 +272,18 @@ class FeatureSelection:
         relevance = self._relevance(X_train, y_train, score_func)
         return self._mrmr_greedy(X_train, relevance, k, redundancy_agg=redundancy_agg)
 
-    def mrmr(self, data, score_func=mutual_info_classif, k=40, redundancy_agg='mean'):
+    def mrmr(self, data, score_func=mutual_info_classif, k=40, redundancy_agg='mean',
+             keep_classes=None, drop_classes=None, gas=None):
         """
         Minimum Redundancy Maximum Relevance, using a single relevance
         measure (mutual information by default). Unlike the univariate
         tests in apply_feature_selection, this actively avoids picking
         near-duplicate features. Prints and saves its own ranked feature
         list to mrmr_features.csv. See _mrmr_greedy for redundancy_agg.
+
+        keep_classes/drop_classes/gas should match the scope `data` was
+        already restricted to upstream - only used (via utils.scope_suffix)
+        to name the saved file.
         """
         selected = self._mrmr_select(data["train"]["X"], data["train"]["y"], score_func, k,
                                       redundancy_agg=redundancy_agg)
@@ -240,28 +293,33 @@ class FeatureSelection:
         mrmr_df.index.name = "rank"
         print(mrmr_df)
 
-        results_path = self.resolve_config_path(self.config_paths['results_path'])
-        results_path.mkdir(parents=True, exist_ok=True)
-        out = results_path / "mrmr_features.csv"
+        results_path = self.feature_selection_results_path()
+        suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
+        out = results_path / f"mrmr_features{suffix}.csv"
         mrmr_df.to_csv(out)
         print(f"Saved {out}")
 
         return mrmr_df
 
-    def apply_mrmr(self, data, k=40, save=True, redundancy_agg='mean'):
+    def apply_mrmr(self, data, k=40, save=True, redundancy_agg='mean',
+                    keep_classes=None, drop_classes=None, gas=None):
         """
         Run the mRMR selection once per univariate test (mutual_info,
-        anova, chi2), so the redundancy-aware rankings can be
+        anova, relief), so the redundancy-aware rankings can be
         compared/aggregated the same way apply_feature_selection's
         pure-relevance rankings are - kept in their own separate file
         (mrmr_ranked_features.csv) rather than merged into
         ranked_features.csv. See _mrmr_greedy for redundancy_agg.
+
+        keep_classes/drop_classes/gas should match the scope `data` was
+        already restricted to upstream - only used (via utils.scope_suffix)
+        to name the saved file.
         """
         X_train, y_train = data["train"]["X"], data["train"]["y"]
         tests = {
             "mutual_info": mutual_info_classif,
             "anova": f_classif,
-            "chi2": chi2,
+            "relief": relief_score,
         }
 
         if k == None:
@@ -275,18 +333,19 @@ class FeatureSelection:
         print(mrmr_df)
 
         if save:
-            results_path = self.resolve_config_path(self.config_paths['results_path'])
-            results_path.mkdir(parents=True, exist_ok=True)
-            out = results_path / "mrmr_ranked_features.csv"
+            results_path = self.feature_selection_results_path()
+            suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
+            out = results_path / f"mrmr_ranked_features{suffix}.csv"
             mrmr_df.to_csv(out)
             print(f"Saved {out}")
 
         return mrmr_df
 
-    def ccombined_mrmr(self, data, k=40, save=True, redundancy_agg='mean'):
+    def ccombined_mrmr(self, data, k=40, save=True, redundancy_agg='mean',
+                        keep_classes=None, drop_classes=None, gas=None):
         """
         Average the (normalized) relevance scores from mutual_info, anova
-        and chi2 into one combined relevance score per feature, then run
+        and relief into one combined relevance score per feature, then run
         the greedy mRMR loop once on that combined score.
 
         This is the "do it right" alternative to apply_mrmr +
@@ -298,6 +357,10 @@ class FeatureSelection:
         up redundant again. Resolving redundancy once, on the combined
         relevance, avoids that reintroduction entirely. See _mrmr_greedy
         for redundancy_agg.
+
+        keep_classes/drop_classes/gas should match the scope `data` was
+        already restricted to upstream - only used (via utils.scope_suffix)
+        to name the saved file.
         """
         X_train, y_train = data["train"]["X"], data["train"]["y"]
         X_train = X_train.loc[:, X_train.std() > 0]
@@ -305,7 +368,7 @@ class FeatureSelection:
         tests = {
             "mutual_info": mutual_info_classif,
             "anova": f_classif,
-            "chi2": chi2,
+            "relief": relief_score,
         }
         relevance = pd.concat(
             [self._relevance(X_train, y_train, score_func) for score_func in tests.values()], axis=1
@@ -321,9 +384,9 @@ class FeatureSelection:
         print(combined_df)
 
         if save:
-            results_path = self.resolve_config_path(self.config_paths['results_path'])
-            results_path.mkdir(parents=True, exist_ok=True)
-            out = results_path / "combined_mrmr_features.csv"
+            results_path = self.feature_selection_results_path()
+            suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
+            out = results_path / f"combined_mrmr_features{suffix}.csv"
             combined_df.to_csv(out)
             print(f"Saved {out}")
 
@@ -344,28 +407,35 @@ class FeatureSelection:
         idx = algo(X_train.values, y_codes, mode='index', n_selected_features=min(k, len(X_train.columns)))
         return X_train.columns[idx].tolist()
 
-    def apply_multivariate_feature_selection(self, data, k=40, save=True):
+    def apply_multivariate_feature_selection(self, data, k=40, save=True,
+                                              keep_classes=None, drop_classes=None, gas=None):
         """
         Run the available multivariate (redundancy-aware) selection
         methods side by side and save their rankings to one file, the same
         way apply_feature_selection does for the univariate tests
-        (mutual_info/anova/chi2) - but here every column already accounts
+        (mutual_info/anova/relief) - but here every column already accounts
         for feature-feature redundancy, not just relevance to the target:
         - mrmr_mean: mutual_info relevance, mean-redundancy mRMR
         - mrmr_max: mutual_info relevance, max-redundancy mRMR (stricter
           about near-duplicates - see _mrmr_greedy)
-        - combined_mrmr: relevance averaged across mutual_info/anova/chi2
+        - combined_mrmr: relevance averaged across mutual_info/anova/relief
           first, then a single mRMR pass (mean-redundancy)
         - jmi / cmim: information-theoretic selectors (skfeature) that can
           credit feature interactions, not just pairwise redundancy - much
           slower than the mRMR variants
+
+        keep_classes/drop_classes/gas should match the scope `data` was
+        already restricted to upstream - only used (via utils.scope_suffix)
+        to name the saved file.
         """
         X_train, y_train = data["train"]["X"], data["train"]["y"]
 
         methods = {
             "mrmr_mean": lambda: self._mrmr_select(X_train, y_train, mutual_info_classif, k, redundancy_agg='mean'),
             "mrmr_max": lambda: self._mrmr_select(X_train, y_train, mutual_info_classif, k, redundancy_agg='max'),
-            "combined_mrmr": lambda: self.combined_mrmr(data, k=k, save=False)["feature"].to_list(),
+            "combined_mrmr": lambda: self.ccombined_mrmr(
+                data, k=k, save=False, keep_classes=keep_classes, drop_classes=drop_classes, gas=gas
+            )["feature"].to_list(),
             "jmi": lambda: self._infotheoretic_select(X_train, y_train, JMI.jmi, k),
             "cmim": lambda: self._infotheoretic_select(X_train, y_train, CMIM.cmim, k),
         }
@@ -377,9 +447,9 @@ class FeatureSelection:
         print(ranked_df)
 
         if save:
-            results_path = self.resolve_config_path(self.config_paths['results_path'])
-            results_path.mkdir(parents=True, exist_ok=True)
-            out = results_path / "multivariate_ranked_features.csv"
+            results_path = self.feature_selection_results_path()
+            suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
+            out = results_path / f"multivariate_ranked_features{suffix}.csv"
             ranked_df.to_csv(out)
             print(f"Saved {out}")
 

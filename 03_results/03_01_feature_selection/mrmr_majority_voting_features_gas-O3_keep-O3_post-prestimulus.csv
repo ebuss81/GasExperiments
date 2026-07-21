@@ -1,0 +1,8 @@
+feature,count
+"value__linear_trend__attr_""pvalue""",2
+value__percentage_of_reoccurring_datapoints_to_all_datapoints,2
+"value__agg_autocorrelation__f_agg_""var""__maxlag_40",2
+"value__fft_coefficient__attr_""real""__coeff_24",2
+value__ratio_value_number_to_time_series_length,2
+"value__fft_coefficient__attr_""angle""__coeff_45",2
+"value__fft_coefficient__attr_""imag""__coeff_38",2
