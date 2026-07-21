@@ -597,7 +597,7 @@ if __name__ == "__main__":
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
 
     data_init, groups = utils.load_and_process_data_for_classification(
-        GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
+        folds = "fold0", apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2',
     )
     fs = FeatureSelection()
