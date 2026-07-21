@@ -193,11 +193,8 @@ class GasClassification:
             if use_experiment_folds:
                 best_pipeline_loaded = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
 
-                base_classifier_name = self.classifier_name
                 final_clf = clone(best_pipeline_loaded)
                 final_clf.fit(data_init["train"]["X"], data_init["train"]["y"])
-                out = results_path / f"{base_classifier_name}_final_classifier.joblib"
-                dump(final_clf, out)
 
                 # Performance on the reserved test experiments - never used
                 # by the search, any dev fold, or (since the imputer fix)
@@ -209,7 +206,14 @@ class GasClassification:
                 # leaderboard - so there's nothing to gain by recomputing
                 # it here. Reported/saved the same way
                 # _train_classifier_single does per split, via
-                # save_best_metrics.
+                # save_best_metrics - into the same results_path/<scope>
+                # folder as everything else from this run (leaderboard,
+                # best_selected_features), not a separate "_final" folder.
+                # This also overwrites best_classifier.joblib with the
+                # trained final_clf (previously the untrained
+                # search-selected pipeline) - clone() elsewhere (e.g.
+                # compute_feature_subset_accuracy) strips fitted state
+                # regardless, so it's still a valid unfitted template.
                 held_out_data = {'X': X_test, 'y': y_test}
                 final_data = {
                     'train': {'X': data_init["train"]["X"], 'y': data_init["train"]["y"]},
@@ -218,11 +222,10 @@ class GasClassification:
                 }
                 figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
                 figures_path.mkdir(parents=True, exist_ok=True)
-                self.classifier_name = f"{base_classifier_name}_final"
                 for split_name in ('train', 'val'):
                     X_split, y_split = final_data[split_name]['X'], final_data[split_name]['y']
                     y_pred = final_clf.predict(X_split)
-                    print(f"[{self.classifier_name}] {split_name.capitalize()} accuracy: "
+                    print(f"[{self.classifier_name}] Final classifier {split_name} accuracy: "
                           f"{final_clf.score(X_split, y_split):.4f}")
                     print(classification_report(y_split, y_pred))
 
@@ -230,16 +233,16 @@ class GasClassification:
                     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=final_clf.classes_)
                     fig, ax = plt.subplots(figsize=(7, 6))
                     disp.plot(ax=ax, xticks_rotation=45, colorbar=True)
-                    ax.set_title(f"{self.classifier_name} — {split_name} confusion matrix")
+                    ax.set_title(f"{self.classifier_name} — final classifier {split_name} confusion matrix")
                     fig.tight_layout()
-                    out_fig = figures_path / f"{self.classifier_name}_{split_name}_confusion_matrix.png"
+                    out_fig = figures_path / f"{self.classifier_name}_final_{split_name}_confusion_matrix.png"
                     fig.savefig(out_fig, dpi=150)
                     print(f"Saved {out_fig}")
                     plt.close(fig)
 
                 self.save_best_metrics(final_clf, final_data, feature_subset=None)
-                self.classifier_name = base_classifier_name
-                logging.info(f"Saved final classifier (refit on all dev data) to {out}")
+                logging.info(f"Saved final classifier (refit on all dev data) to "
+                             f"{results_path / f'{self.classifier_name}_best_classifier.joblib'}")
             else:
                 clf = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
                 clf.fit(data_init["train"]["X"], data_init["train"]["y"])
@@ -424,15 +427,33 @@ class GasClassification:
 
         return clf, scores, cms
 
-    def compute_feature_subset_accuracy(self, classifier_name="TabPFN", target='class',
+    def compute_feature_subset_accuracy(self, target='class',
                                          ranked_features_path=None, use_majority_rank_aggregation=False,
-                                         max_features=100, save=True, fold=0):
+                                         max_features=100, save=True, fold=0,
+                                         keep_classes=None, drop_classes=None, gas=None):
         """
         For each feature-selection approach (column) in a ranked-features
-        CSV, train classifier_name repeatedly using only that approach's
-        top-1, top-2, ..., top-max_features features, plus one "all_features"
-        baseline trained on every available feature. Tracks train/val/test
-        accuracy at every step.
+        CSV, repeatedly clone+train the AutoML-selected best classifier for
+        this scope, using only that approach's top-1, top-2, ...,
+        top-max_features features, plus one "all_features" baseline trained
+        on every available feature. Tracks train/val/test accuracy at every
+        step.
+
+        keep_classes/drop_classes/gas select the classification scope, the
+        same way they do in load_and_process_data_for_classification and
+        auto_ml - both which classifier gets loaded and which ranked-
+        features file gets read depend on this scope:
+        - Classifier: loaded from
+          results_path/NaiveAutoML<scope_suffix>_best_classifier.joblib (an
+          untrained pipeline template, dumped by auto_ml(train=True)) and
+          re-cloned fresh for every n_features step, since each step needs
+          its own fit on a different feature subset.
+        - Ranked features (when ranked_features_path is None): read from
+          results_path/03_01_feature_selection/, with the same
+          <scope_suffix> FeatureSelection's apply_* methods save with.
+        Run auto_ml(train=True, ...) and the relevant FeatureSelection
+        apply_* method with the same keep_classes/drop_classes/gas first,
+        or this will fail to find either file.
 
         Unlike the old train_classifier_feature_subset, this does not plot
         anything itself - it saves one long-format CSV (columns: source,
@@ -441,13 +462,13 @@ class GasClassification:
         compare, then use plot_feature_subset_accuracy to load any
         combination of the resulting tables onto one figure.
 
-        Which file is read is chosen, in order of priority:
+        Which ranked-features file is read is chosen, in order of priority:
         1. ranked_features_path, if given - any ranked-features CSV, e.g.
            mrmr_ranked_features.csv or multivariate_ranked_features.csv.
         2. use_majority_rank_aggregation=True - majority_rank_ranked_features.csv
            (majority_voting + rank_aggregation, from
            FeatureSelection.combine_majority_rank_aggregation).
-        3. Default: univariate_ranked_features.csv (mutual_info/anova/chi2).
+        3. Default: univariate_ranked_features.csv (mutual_info/anova/relief).
 
         fold=None (default) reads the flat splits_path/{train,val,test}.csv
         written by make_data_set - pass a fold index (e.g. fold=0) to
@@ -455,16 +476,20 @@ class GasClassification:
         written by make_experiment_cv_folds, when the flat split hasn't been
         generated.
         """
-        self.classifier_name = classifier_name
+        self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
         data_init, groups = utils.load_and_process_data_for_classification(
-            self.folds, apply_smote=False, scale=True, apply_undersample=False, target=target, fold=fold
+            self.folds, apply_smote=False, scale=True, apply_undersample=False, target=target, fold=fold,
+            keep_classes=keep_classes, drop_classes=drop_classes, gas=gas,
         )
 
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
+        best_pipeline_template = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
+
         if ranked_features_path is None:
-            default_name = "majority_rank_ranked_features.csv" if use_majority_rank_aggregation \
-                else "univariate_ranked_features.csv"
-            ranked_features_path = results_path / default_name
+            suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
+            default_name = f"majority_rank_ranked_features{suffix}.csv" if use_majority_rank_aggregation \
+                else f"univariate_ranked_features{suffix}.csv"
+            ranked_features_path = results_path / "03_01_feature_selection" / default_name
         ranked_df = pd.read_csv(ranked_features_path, index_col=0)
         approaches = [c for c in ranked_df.columns if not c.endswith('_score')]
         source = Path(ranked_features_path).stem
@@ -480,7 +505,7 @@ class GasClassification:
             for n in range(1, n_max + 1):
                 print(f"{approach}_{n}")
                 subset = ranked_list[:n]
-                clf = self._build_classifier(classifier_name)
+                clf = clone(best_pipeline_template)
                 clf.fit(data_init['train']['X'][subset], data_init['train']['y'])
 
                 for split in ('train', 'val', 'test'):
@@ -501,7 +526,7 @@ class GasClassification:
         # plot_feature_subset_accuracy draws single-row approaches as a
         # flat reference line rather than a point.
         all_features = sorted(available)
-        clf = self._build_classifier(classifier_name)
+        clf = clone(best_pipeline_template)
         clf.fit(data_init['train']['X'][all_features], data_init['train']['y'])
         for split in ('train', 'val', 'test'):
             X_split, y_split = data_init[split]['X'][all_features], data_init[split]['y']
@@ -515,7 +540,7 @@ class GasClassification:
         if save:
             tables_dir = results_path / "feature_acc_lists_to_plot"
             tables_dir.mkdir(parents=True, exist_ok=True)
-            out = tables_dir / f"{classifier_name}_{source}_feature_subset_accuracy.csv"
+            out = tables_dir / f"{self.classifier_name}_{source}_feature_subset_accuracy.csv"
             table.to_csv(out, index=False)
             print(f"Saved {out}")
 
@@ -592,10 +617,13 @@ if __name__ == "__main__":
     #    GC.train_classifier(classifier, feature_column="cmim")
     #GC.auto_ml(train=True, save=True)
     #GC.train_classifier_feature_subset()
-    #GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True)
+    keep_classes_by_gas = [['CO2_post', 'prestimulus']]#, ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
+    for classes, gas in zip(keep_classes_by_gas, ["CO2"]):#, "O3", "N2"]):
+        GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
+        #GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True, keep_classes=classes, gas=gas)
     #GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
-
+    """
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         data_init, groups = utils.load_and_process_data_for_classification(
@@ -606,6 +634,7 @@ if __name__ == "__main__":
         fs.apply_univariate_feature_selection(
             data_init, groups, save=True, keep_classes=classes, gas=gas,
         )
+    """
 
     #fs.aggregate_features(majority_voting=True, rank_aggregation=True, use_mrmr=True)
     #fs.apply_mrmr(data_init, None, save=True)

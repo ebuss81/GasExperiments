@@ -41,7 +41,7 @@ def classifier_config(classifier, automl_results_path=None):
             max_leaf_nodes=15,
         )
     elif classifier == "AutoML":
-        clf = load(automl_results_path / "NaiveAutoML_best_classifier.joblib")  #untrained model
+        clf = load(automl_results_path / "NaiveAutoML_best_classifier.joblib")  # re-fit by the caller regardless of whether this was saved untrained (search only) or already fit (search + save)
     elif classifier == "TabPFN":
         clf = TabPFNClassifier()
     elif classifier == "TabICL":
