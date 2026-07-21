@@ -10,7 +10,6 @@ from sklearn.feature_selection import (
     mutual_info_classif,
     mutual_info_regression
 )
-from skfeature.function.information_theoretical_based import JMI, CMIM
 from skfeature.function.similarity_based.reliefF import reliefF
 import utils
 
@@ -341,72 +340,6 @@ class FeatureSelection:
 
         return mrmr_df
 
-    def ccombined_mrmr(self, data, k=40, save=True, redundancy_agg='mean',
-                        keep_classes=None, drop_classes=None, gas=None):
-        """
-        Average the (normalized) relevance scores from mutual_info, anova
-        and relief into one combined relevance score per feature, then run
-        the greedy mRMR loop once on that combined score.
-
-        This is the "do it right" alternative to apply_mrmr +
-        aggregate_features(use_mrmr=True): running mRMR three times (once
-        per test) and then averaging ranks only removes redundancy within
-        each individual test's ranking - each test can still independently
-        pick a different, mutually-correlated feature (e.g. a different
-        change_quantiles variant each), so the final averaged list can end
-        up redundant again. Resolving redundancy once, on the combined
-        relevance, avoids that reintroduction entirely. See _mrmr_greedy
-        for redundancy_agg.
-
-        keep_classes/drop_classes/gas should match the scope `data` was
-        already restricted to upstream - only used (via utils.scope_suffix)
-        to name the saved file.
-        """
-        X_train, y_train = data["train"]["X"], data["train"]["y"]
-        X_train = X_train.loc[:, X_train.std() > 0]
-
-        tests = {
-            "mutual_info": mutual_info_classif,
-            "anova": f_classif,
-            "relief": relief_score,
-        }
-        relevance = pd.concat(
-            [self._relevance(X_train, y_train, score_func) for score_func in tests.values()], axis=1
-        ).mean(axis=1)
-
-        if k is None:
-            k = len(X_train.columns)
-        selected = self._mrmr_greedy(X_train, relevance, k, redundancy_agg=redundancy_agg)
-
-        combined_df = pd.DataFrame({"feature": selected})
-        combined_df.index = range(1, len(combined_df) + 1)
-        combined_df.index.name = "rank"
-        print(combined_df)
-
-        if save:
-            results_path = self.feature_selection_results_path()
-            suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
-            out = results_path / f"combined_mrmr_features{suffix}.csv"
-            combined_df.to_csv(out)
-            print(f"Saved {out}")
-
-        return combined_df
-
-    def _infotheoretic_select(self, X_train, y_train, algo, k):
-        """
-        Run a skfeature information-theoretic multivariate selector (JMI,
-        CMIM, ...) and return the plain list of selected feature names.
-        Unlike mRMR's correlation-based redundancy proxy, these score
-        candidate features by their joint/conditional mutual information
-        with already-selected features and the target, so they can credit
-        genuine feature interactions - at the cost of being much slower
-        (tens of seconds even for a few dozen features).
-        """
-        X_train = X_train.loc[:, X_train.std() > 0]
-        y_codes = y_train.astype('category').cat.codes.values
-        idx = algo(X_train.values, y_codes, mode='index', n_selected_features=min(k, len(X_train.columns)))
-        return X_train.columns[idx].tolist()
-
     def apply_multivariate_feature_selection(self, data, k=40, save=True,
                                               keep_classes=None, drop_classes=None, gas=None):
         """
@@ -418,11 +351,11 @@ class FeatureSelection:
         - mrmr_mean: mutual_info relevance, mean-redundancy mRMR
         - mrmr_max: mutual_info relevance, max-redundancy mRMR (stricter
           about near-duplicates - see _mrmr_greedy)
-        - combined_mrmr: relevance averaged across mutual_info/anova/relief
-          first, then a single mRMR pass (mean-redundancy)
-        - jmi / cmim: information-theoretic selectors (skfeature) that can
-          credit feature interactions, not just pairwise redundancy - much
-          slower than the mRMR variants
+
+        JMI/CMIM (skfeature's information-theoretic selectors) used to be
+        included here too, but their discrete mutual-information estimators
+        aren't valid on tsfresh's continuous features - dropped rather than
+        discretized/replaced.
 
         keep_classes/drop_classes/gas should match the scope `data` was
         already restricted to upstream - only used (via utils.scope_suffix)
@@ -433,11 +366,6 @@ class FeatureSelection:
         methods = {
             "mrmr_mean": lambda: self._mrmr_select(X_train, y_train, mutual_info_classif, k, redundancy_agg='mean'),
             "mrmr_max": lambda: self._mrmr_select(X_train, y_train, mutual_info_classif, k, redundancy_agg='max'),
-            "combined_mrmr": lambda: self.ccombined_mrmr(
-                data, k=k, save=False, keep_classes=keep_classes, drop_classes=drop_classes, gas=gas
-            )["feature"].to_list(),
-            "jmi": lambda: self._infotheoretic_select(X_train, y_train, JMI.jmi, k),
-            "cmim": lambda: self._infotheoretic_select(X_train, y_train, CMIM.cmim, k),
         }
 
         ranked_columns = {name: method() for name, method in methods.items()}
