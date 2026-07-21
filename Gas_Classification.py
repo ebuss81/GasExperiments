@@ -596,14 +596,17 @@ if __name__ == "__main__":
     #GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
 
-    data_init, groups = utils.load_and_process_data_for_classification(
-        GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
-        fold=0, keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2',
-    )
-    fs = FeatureSelection()
-    fs.apply_univariate_feature_selection(
-        data_init, groups, save=True, keep_classes=['CO2_post', 'prestimulus'], gas='CO2',
-    )
+
+    keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
+    for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
+        data_init, groups = utils.load_and_process_data_for_classification(
+            GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
+            fold=0, keep_classes=classes, drop_classes=None, gas=gas,
+        )
+        fs = FeatureSelection()
+        fs.apply_univariate_feature_selection(
+            data_init, groups, save=True, keep_classes=classes, gas=gas,
+        )
     #fs.aggregate_features(majority_voting=True, rank_aggregation=True, use_mrmr=True)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True)
