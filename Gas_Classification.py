@@ -131,7 +131,7 @@ class GasClassification:
 
     def auto_ml(self, train=False, save=False, undersample=False, smote=True, adasyn=False,
                 use_experiment_folds=True, target='class',
-                keep_classes=['O3_post', 'prestimulus'], drop_classes=None, gas='O3'):
+                keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2'):
         """
         undersample/smote/adasyn are mutually exclusive resampling options for
         the training data before the AutoML search sees it - ignored when
