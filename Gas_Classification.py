@@ -597,11 +597,13 @@ if __name__ == "__main__":
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
 
     data_init, groups = utils.load_and_process_data_for_classification(
-        folds = "fold0", apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
-        keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2',
+        GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
+        fold=0, keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2',
     )
     fs = FeatureSelection()
-    fs.apply_univariate_feature_selection(data_init, groups, save=True)
+    fs.apply_univariate_feature_selection(
+        data_init, groups, save=True, keep_classes=['CO2_post', 'prestimulus'], gas='CO2',
+    )
     #fs.aggregate_features(majority_voting=True, rank_aggregation=True, use_mrmr=True)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True)
