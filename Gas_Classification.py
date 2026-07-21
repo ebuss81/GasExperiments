@@ -444,10 +444,11 @@ class GasClassification:
         auto_ml - both which classifier gets loaded and which ranked-
         features file gets read depend on this scope:
         - Classifier: loaded from
-          results_path/NaiveAutoML<scope_suffix>_best_classifier.joblib (an
-          untrained pipeline template, dumped by auto_ml(train=True)) and
-          re-cloned fresh for every n_features step, since each step needs
-          its own fit on a different feature subset.
+          results_path/NaiveAutoML<scope_suffix>/NaiveAutoML<scope_suffix>_best_classifier.joblib
+          (dumped by auto_ml - untrained if only train=True has run, fit on
+          all dev data if save=True has also run) and re-cloned fresh for
+          every n_features step, since each step needs its own fit on a
+          different feature subset.
         - Ranked features (when ranked_features_path is None): read from
           results_path/03_01_feature_selection/, with the same
           <scope_suffix> FeatureSelection's apply_* methods save with.
@@ -483,7 +484,21 @@ class GasClassification:
         )
 
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
-        best_pipeline_template = load(results_path / f"{self.classifier_name}_best_classifier.joblib")
+        best_pipeline_template = load(
+            results_path / self.classifier_name / f"{self.classifier_name}_best_classifier.joblib"
+        )
+        # Use just the final 'learner' step (naiveautoml's own pipeline
+        # step name - see the clf['learner'] usage in auto_ml), not the
+        # whole pipeline: the pipeline's internal feature-preprocessor was
+        # tuned assuming the full feature set, and can collapse a tiny
+        # externally-chosen n-feature subset down to 0 columns (crashing
+        # the final estimator) - counter to the whole point of this sweep,
+        # which is to see how accuracy changes with an externally chosen
+        # feature count. load_and_process_data_for_classification already
+        # scales/imputes upstream, so the pipeline's other preprocessing
+        # steps aren't needed here either.
+        best_learner_template = best_pipeline_template['learner'] if hasattr(best_pipeline_template, 'named_steps') \
+            else best_pipeline_template
 
         if ranked_features_path is None:
             suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
@@ -505,7 +520,7 @@ class GasClassification:
             for n in range(1, n_max + 1):
                 print(f"{approach}_{n}")
                 subset = ranked_list[:n]
-                clf = clone(best_pipeline_template)
+                clf = clone(best_learner_template)
                 clf.fit(data_init['train']['X'][subset], data_init['train']['y'])
 
                 for split in ('train', 'val', 'test'):
@@ -526,7 +541,7 @@ class GasClassification:
         # plot_feature_subset_accuracy draws single-row approaches as a
         # flat reference line rather than a point.
         all_features = sorted(available)
-        clf = clone(best_pipeline_template)
+        clf = clone(best_learner_template)
         clf.fit(data_init['train']['X'][all_features], data_init['train']['y'])
         for split in ('train', 'val', 'test'):
             X_split, y_split = data_init[split]['X'][all_features], data_init[split]['y']
@@ -617,10 +632,10 @@ if __name__ == "__main__":
     #    GC.train_classifier(classifier, feature_column="cmim")
     #GC.auto_ml(train=True, save=True)
     #GC.train_classifier_feature_subset()
-    keep_classes_by_gas = [['CO2_post', 'prestimulus']]#, ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
-    for classes, gas in zip(keep_classes_by_gas, ["CO2"]):#, "O3", "N2"]):
+    keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
+    for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        #GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True, keep_classes=classes, gas=gas)
+        GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True, keep_classes=classes, gas=gas)
     #GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
     """

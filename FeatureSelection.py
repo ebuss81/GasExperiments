@@ -49,7 +49,7 @@ class FeatureSelection:
         path = Path(path_value).expanduser()
         if path.is_absolute():
             return path
-        return self.base_dir / path
+        return self.base_dir / path / 'raw'
 
     def feature_selection_results_path(self):
         """
