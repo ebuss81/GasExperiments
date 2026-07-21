@@ -598,7 +598,7 @@ if __name__ == "__main__":
 
     data_init, groups = utils.load_and_process_data_for_classification(
         GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
-        fold=0, keep_classes=['CO2_post', 'prestimulus'], drop_classes=None, gas='CO2',
+        fold=0, keep_classes=['O3_post', 'prestimulus'], drop_classes=None, gas='O3',
     )
     fs = FeatureSelection()
     fs.apply_univariate_feature_selection(
