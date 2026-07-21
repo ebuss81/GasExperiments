@@ -632,12 +632,12 @@ if __name__ == "__main__":
     #    GC.train_classifier(classifier, feature_column="cmim")
     #GC.auto_ml(train=True, save=True)
     #GC.train_classifier_feature_subset()
-    keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
-    for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
-        GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True, keep_classes=classes, gas=gas)
+    #keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
+    #for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
+    #    GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
+    #    GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=200, save=True, keep_classes=classes, gas=gas)
     #GC.compute_feature_subset_accuracy(ranked_features_path= "03_results/multivariate_ranked_features.csv", use_majority_rank_aggregation=False, max_features=200, save=True, )
-    #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
+    GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
     """
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
