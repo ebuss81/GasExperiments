@@ -642,7 +642,7 @@ if __name__ == "__main__":
         #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
         #)
         #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=200, save=True,
-                                            keep_classes=classes, gas=gas)
+        #                                    keep_classes=classes, gas=gas)
 
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
