@@ -561,26 +561,34 @@ class GasClassification:
 
         return table
 
-    def plot_feature_subset_accuracy(self, classifier_name="HistGradBoost",
-                                      out_name=None, show=True, save=True, metric="accuracy"):
+    def plot_feature_subset_accuracy(self, out_name=None, show=True, save=True, metric="accuracy",
+                                      keep_classes=None, drop_classes=None, gas=None):
         """
-        Load every CSV in results_path/feature_acc_lists_to_plot (each
-        written by compute_feature_subset_accuracy) and plot metric vs
+        Load every CSV in results_path/feature_acc_lists_to_plot whose
+        filename matches this scope (written by compute_feature_subset_accuracy
+        for the same keep_classes/drop_classes/gas) and plot metric vs
         number of features on one figure - one subplot per split, one line
         per (source, approach) combination - so any combination of
-        previously computed approaches/sources can be compared together
-        just by having their tables sit in that folder. Series with a
-        single row (e.g. the "all_features" baseline) are drawn as a flat
-        dashed reference line instead of a single point.
+        previously computed ranked-features files *for this scope* can be
+        compared together just by having their tables sit in that folder.
+        Series with a single row (e.g. the "all_features" baseline) are
+        drawn as a flat dashed reference line instead of a single point.
+
+        keep_classes/drop_classes/gas must match what
+        compute_feature_subset_accuracy was called with - only tables saved
+        under the matching "NaiveAutoML<scope_suffix>_..." prefix are
+        loaded, so tables from different scopes (e.g. CO2 vs O3 binary
+        problems) never end up mixed on the same figure.
 
         metric selects which column to plot: "accuracy" (default) or
         "f1_score" - both are saved by compute_feature_subset_accuracy.
         """
+        self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
         tables_dir = results_path / "feature_acc_lists_to_plot"
-        csv_files = sorted(tables_dir.glob("*.csv"))
+        csv_files = sorted(tables_dir.glob(f"{self.classifier_name}_*.csv"))
         if not csv_files:
-            raise FileNotFoundError(f"No accuracy tables found in {tables_dir}")
+            raise FileNotFoundError(f"No accuracy tables found in {tables_dir} for scope {self.classifier_name}")
 
         frames = [pd.read_csv(f) for f in csv_files]
         data = pd.concat(frames, ignore_index=True)
@@ -606,13 +614,13 @@ class GasClassification:
             ax.grid(True, alpha=0.3)
             ax.legend(fontsize=8)
         axes[-1].set_xlabel("Number of features")
-        fig.suptitle(f"{classifier_name} {metric} vs number of features")
+        fig.suptitle(f"{self.classifier_name} {metric} vs number of features")
         fig.tight_layout()
 
         if save:
             figures_path = self.folds.resolve_config_path(self.folds.config_paths['figures_path'])
             figures_path.mkdir(parents=True, exist_ok=True)
-            out_name = out_name or f"{classifier_name}_feature_subset_{metric}_combined.png"
+            out_name = out_name or f"{self.classifier_name}_feature_subset_{metric}_combined.png"
             out = figures_path / out_name
             fig.savefig(out, dpi=150)
             print(f"Saved {out}")
@@ -643,10 +651,9 @@ if __name__ == "__main__":
         #)
         #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=200, save=True,
         #                                    keep_classes=classes, gas=gas)
-
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
-        #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
+        #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,"""
         #)
         #fs = FeatureSelection()
         #fs.apply_univariate_feature_selection(, keep_classes=classes, gas=gas)
