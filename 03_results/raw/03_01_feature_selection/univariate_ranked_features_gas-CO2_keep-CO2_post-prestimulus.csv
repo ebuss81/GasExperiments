@@ -1,4 +1,4 @@
-rank,mutual_info,mutual_info_score,anova,anova_score,relief,relief_score
+    rank,mutual_info,mutual_info_score,anova,anova_score,relief,relief_score
 1,"value__fft_coefficient__attr_""imag""__coeff_72",0.06778284949549396,value__ratio_beyond_r_sigma__r_0.5,35.31325256624258,"value__agg_linear_trend__attr_""slope""__chunk_len_5__f_agg_""var""",457.94619533560893
 2,value__energy_ratio_by_chunks__num_segments_10__segment_focus_7,0.06767549481198865,value__ratio_beyond_r_sigma__r_1,34.71998145966988,value__friedrich_coefficients__coeff_3__m_3__r_30,413.58083196061233
 3,"value__fft_coefficient__attr_""imag""__coeff_30",0.06712627879832933,"value__agg_autocorrelation__f_agg_""median""__maxlag_40",32.33582150614106,"value__agg_linear_trend__attr_""slope""__chunk_len_10__f_agg_""var""",356.1791601617767

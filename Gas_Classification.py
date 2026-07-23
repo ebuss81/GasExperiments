@@ -499,6 +499,15 @@ class GasClassification:
         # steps aren't needed here either.
         best_learner_template = best_pipeline_template['learner'] if hasattr(best_pipeline_template, 'named_steps') \
             else best_pipeline_template
+        # naiveautoml's search doesn't fix random_state as a tuned
+        # hyperparameter, so the picked learner is often left at sklearn's
+        # default (None) - meaning separate calls to this method (e.g. one
+        # per ranked-features file) would each fit differently on the same
+        # data purely from training-time randomness (bootstrap sampling,
+        # random splits, ...), not any real data difference. Pin it so
+        # every clone(best_learner_template).fit(...) below is reproducible.
+        if 'random_state' in best_learner_template.get_params():
+            best_learner_template.set_params(random_state=42)
 
         if ranked_features_path is None:
             suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
@@ -631,6 +640,74 @@ class GasClassification:
 
         return data
 
+    def get_best_feature_subsets_metrics(self, keep_classes=None, drop_classes=None, gas=None, min_delta=0.01):
+        """
+        For every feature-selection approach found in
+        results_path/feature_acc_lists_to_plot for this scope (written by
+        compute_feature_subset_accuracy, same file-matching as
+        plot_feature_subset_accuracy), find the smallest n_features whose
+        validation accuracy is within min_delta (default 1 percentage
+        point) of that approach's true peak validation accuracy, and
+        print/return that val accuracy alongside the accuracy on the test
+        split *at that same n_features* - not the best test accuracy,
+        which would leak information from picking n_features using the
+        test set itself.
+
+        Picking the smallest n_features within min_delta of the true peak
+        (rather than the raw argmax) avoids preferring a larger, noisier
+        feature count for a negligible/within-noise accuracy gain -
+        min_delta=0 recovers the raw-argmax behavior.
+
+        keep_classes/drop_classes/gas must match what
+        compute_feature_subset_accuracy was called with - only tables
+        saved under the matching "NaiveAutoML<scope_suffix>_..." prefix
+        are loaded.
+        """
+        self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
+        results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
+        tables_dir = results_path / "feature_acc_lists_to_plot"
+        csv_files = sorted(tables_dir.glob(f"{self.classifier_name}_*.csv"))
+        if not csv_files:
+            raise FileNotFoundError(f"No accuracy tables found in {tables_dir} for scope {self.classifier_name}")
+
+        frames = [pd.read_csv(f) for f in csv_files]
+        data = pd.concat(frames, ignore_index=True)
+        data['series'] = data['source'] + ':' + data['approach']
+
+        print(f"\n{'=' * 70}\nBest feature-subset results for {self.classifier_name}\n{'=' * 70}")
+
+        rows = []
+        for series_name, group in data.groupby('series'):
+            val = group[group['split'] == 'val'].sort_values('n_features')
+            if val.empty:
+                continue
+            peak_accuracy = val['accuracy'].max()
+            # Smallest n_features within min_delta of the true peak, not
+            # the raw argmax - avoids preferring more features for a
+            # negligible accuracy gain.
+            within_tolerance = val[val['accuracy'] >= peak_accuracy - min_delta]
+            best = within_tolerance.iloc[0]
+            best_n = best['n_features']
+
+            test = group[(group['split'] == 'test') & (group['n_features'] == best_n)]
+            test_acc = test['accuracy'].iloc[0] if not test.empty else float('nan')
+
+            print(f"\n{series_name}\n{'-' * len(series_name)}")
+            print(f"  best val accuracy  : {best['accuracy']:.4f}  (n_features={best_n}, "
+                  f"true peak={peak_accuracy:.4f})")
+            print(f"  test accuracy      : {test_acc:.4f}  (at n_features={best_n})")
+            rows.append({'series': series_name, 'n_features': best_n,
+                         'val_accuracy': best['accuracy'], 'test_accuracy': test_acc})
+
+        results = pd.DataFrame(rows).sort_values('val_accuracy', ascending=False).reset_index(drop=True)
+
+        print(f"\n{'=' * 70}\nRanked by val accuracy\n{'=' * 70}")
+        for rank, row in results.iterrows():
+            print(f"{rank + 1}. {row['series']}\n"
+                  f"   val={row['val_accuracy']:.4f}  test={row['test_accuracy']:.4f}  n_features={row['n_features']}\n")
+
+        return results
+
 
 if __name__ == "__main__":
     GC = GasClassification()
@@ -654,15 +731,14 @@ if __name__ == "__main__":
         #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas)
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
-        #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,"""
+        #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
         #)
-        #fs = FeatureSelection()
+        fs = FeatureSelection()
         #fs.apply_univariate_feature_selection(, keep_classes=classes, gas=gas)
         #    data_init, groups, save=True, keep_classes=classes, gas=gas)
         #fs.apply_multivariate_feature_selection(data_init, k=200, save=True, keep_classes=classes, gas=gas)
-        #fs.aggregate_features(keep_classes=classes, gas=gas)
-        GC.plot_feature_subset_accuracy(out_name="AutoML", metric="accuracy", keep_classes=classes, gas=gas)
-    #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
-
+        fs.aggregate_features(keep_classes=classes, gas=gas)
+        #GC.plot_feature_subset_accuracy(out_name="AutoML", metric="accuracy", keep_classes=classes, gas=gas)
+        #GC.get_best_feature_subsets_metrics(keep_classes=classes, gas=gas)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True
