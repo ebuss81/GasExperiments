@@ -428,7 +428,7 @@ class GasClassification:
         return clf, scores, cms
 
     def compute_feature_subset_accuracy(self, target='class',
-                                         ranked_features_path=None, use_majority_rank_aggregation=False,
+                                         ranked_features_path=None, use_aggregated_ranking=False,
                                          max_features=100, save=True, fold=0,
                                          keep_classes=None, drop_classes=None, gas=None):
         """
@@ -466,9 +466,9 @@ class GasClassification:
         Which ranked-features file is read is chosen, in order of priority:
         1. ranked_features_path, if given - any ranked-features CSV, e.g.
            mrmr_ranked_features.csv or multivariate_ranked_features.csv.
-        2. use_majority_rank_aggregation=True - majority_rank_ranked_features.csv
-           (majority_voting + rank_aggregation, from
-           FeatureSelection.combine_majority_rank_aggregation).
+        2. use_aggregated_ranking=True - aggregated_ranked_features.csv
+           (mean/median/product across every univariate+multivariate
+           method, from FeatureSelection.aggregate_features).
         3. Default: univariate_ranked_features.csv (mutual_info/anova/relief).
 
         fold=None (default) reads the flat splits_path/{train,val,test}.csv
@@ -502,7 +502,7 @@ class GasClassification:
 
         if ranked_features_path is None:
             suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
-            default_name = f"majority_rank_ranked_features{suffix}.csv" if use_majority_rank_aggregation \
+            default_name = f"aggregated_ranked_features{suffix}.csv" if use_aggregated_ranking \
                 else f"univariate_ranked_features{suffix}.csv"
             ranked_features_path = results_path / "03_01_feature_selection" / default_name
         ranked_df = pd.read_csv(ranked_features_path, index_col=0)
@@ -644,13 +644,14 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        GC.compute_feature_subset_accuracy(use_majority_rank_aggregation=False, max_features=10000, save=True, keep_classes=classes, gas=gas)
+        #GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas)
         #multivariate_path = (
         #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
         #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
         #)
         #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=200, save=True,
         #                                    keep_classes=classes, gas=gas)
+        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas)
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,"""
@@ -659,11 +660,9 @@ if __name__ == "__main__":
         #fs.apply_univariate_feature_selection(, keep_classes=classes, gas=gas)
         #    data_init, groups, save=True, keep_classes=classes, gas=gas)
         #fs.apply_multivariate_feature_selection(data_init, k=200, save=True, keep_classes=classes, gas=gas)
-
+        #fs.aggregate_features(keep_classes=classes, gas=gas)
+        GC.plot_feature_subset_accuracy(out_name="AutoML", metric="accuracy", keep_classes=classes, gas=gas)
     #GC.plot_feature_subset_accuracy(classifier_name="TabPFN",metric="accuracy")
 
-
-
-    #fs.aggregate_features(majority_voting=True, rank_aggregation=True, use_mrmr=True)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True

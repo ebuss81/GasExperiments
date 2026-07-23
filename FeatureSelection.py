@@ -96,106 +96,69 @@ class FeatureSelection:
 
         return ranked_df
     
-    def aggregate_features(self, majority_voting=True, rank_aggregation=False, use_mrmr=False,
-                            keep_classes=None, drop_classes=None, gas=None):
+    def aggregate_features(self, save=True, keep_classes=None, drop_classes=None, gas=None):
         """
-        use_mrmr=False (default) aggregates the plain univariate rankings
-        from apply_feature_selection (ranked_features.csv). use_mrmr=True
-        aggregates the redundancy-aware rankings from apply_mrmr
-        (mrmr_ranked_features.csv) instead. Output files are named
-        accordingly so the two don't overwrite each other.
+        Combine every filter method's ranking - univariate (mutual_info,
+        anova, relief, from apply_univariate_feature_selection) and
+        multivariate (mrmr_mean, mrmr_max, from
+        apply_multivariate_feature_selection) - into one aggregated
+        ranking, three different ways to condense each feature's ranks
+        across methods into a single number:
+        - mean: average rank across methods.
+        - median: middle rank across methods - less sensitive than mean to
+          one method ranking a feature unusually high/low.
+        - product: rank product - a feature consistently near the top
+          across every method gets a low product; one bad rank from a
+          single method can't be offset by the others the way it can with
+          mean/median (product grows fast with any large rank).
+        Each is sorted ascending (lower = better) into its own column of
+        one output file.
 
-        keep_classes/drop_classes/gas must match whatever scope the source
-        ranking file was saved with (see apply_feature_selection/apply_mrmr)
-        so the right (scope-suffixed) file is read/written here too.
-        """
-        results_path = self.feature_selection_results_path()
-        suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
-        prefix = "mrmr_" if use_mrmr else ""
-        # apply_mrmr saves "mrmr_ranked_features..." (matches prefix +
-        # "ranked_features..." for use_mrmr=True) but apply_feature_selection
-        # saves "univariate_ranked_features..." (not "ranked_features...")
-        # for use_mrmr=False.
-        source_name = f"mrmr_ranked_features{suffix}.csv" if use_mrmr else f"univariate_ranked_features{suffix}.csv"
-        source = results_path / source_name
-        ranked_features = pd.read_csv(source, index_col=0)
-        # apply_feature_selection also saves a "<test>_score" column next
-        # to each "<test>" feature-name column - only the feature-name
-        # columns are rank->feature mappings, so drop the score columns
-        # before aggregating.
-        ranked_features = ranked_features[[c for c in ranked_features.columns if not c.endswith('_score')]]
-
-        if majority_voting:
-            n = 40
-            top_n = ranked_features.loc[1:n]
-            occurrences = pd.Series(top_n.values.ravel()).value_counts()
-
-            occurrences = occurrences[occurrences > 1]
-
-            for idx, (feature, count) in enumerate(occurrences.items()):
-                print(f"{idx}, {feature}: {count}")
-
-            out = results_path / f"{prefix}majority_voting_features{suffix}.csv"
-            occurrences.rename("count").rename_axis("feature").to_csv(out)
-            print(f"Saved {out}")
-
-        if rank_aggregation:
-            # invert rank->feature (per test) into feature->rank, then average across tests
-            rank_lookup = pd.DataFrame({
-                test: pd.Series(ranked_features.index, index=ranked_features[test])
-                for test in ranked_features.columns
-            })
-            avg_rank = rank_lookup.mean(axis=1).sort_values()
-            avg_rank.index.name = "feature"
-            avg_rank.name = "avg_rank"
-
-            for idx, (feature, rank) in enumerate(avg_rank.items()):
-                print(f"{idx}, {feature}: {rank:.2f}")
-
-            out = results_path / f"{prefix}rank_aggregation_features{suffix}.csv"
-            avg_rank.to_csv(out)
-            print(f"Saved {out}")
-
-    def combine_majority_rank_aggregation(self, use_mrmr=False, save=True,
-                                           keep_classes=None, drop_classes=None, gas=None):
-        """
-        majority_voting_features.csv (feature, count) and
-        rank_aggregation_features.csv (feature, avg_rank) are both
-        single-approach outputs of aggregate_features with different
-        shapes/schemas, so they can't be fed into e.g.
-        Gas_Classification.train_classifier_feature_subset directly.
-        This combines them into one ranked-features file with a
-        "majority_voting" and a "rank_aggregation" column (rank index +
-        ordered feature names), so the two can be compared on one
-        accuracy-vs-features plot the same way any other ranked-features
-        file is. majority_voting is typically much shorter (only features
-        that >1 test agreed on) - it's padded with NaN past that point.
+        Multivariate rankings only cover their top-k selected features
+        (unlike univariate's full ranking of every feature) - a feature
+        missing from a given method's list is NaN for that method and
+        skipped (not penalized with a worst-case rank) when computing its
+        mean/median/product, i.e. its aggregate rank reflects only the
+        methods that actually ranked it.
 
         keep_classes/drop_classes/gas must match whatever scope
-        aggregate_features was called with, so the right (scope-suffixed)
-        files are read/written here too.
+        apply_univariate_feature_selection/apply_multivariate_feature_selection
+        were called with, so the right (scope-suffixed) source files are
+        found.
         """
         results_path = self.feature_selection_results_path()
         suffix = utils.scope_suffix(gas, keep_classes, drop_classes)
-        prefix = "mrmr_" if use_mrmr else ""
 
-        majority = pd.read_csv(results_path / f"{prefix}majority_voting_features{suffix}.csv")
-        rank_agg = pd.read_csv(results_path / f"{prefix}rank_aggregation_features{suffix}.csv")
+        univariate = pd.read_csv(results_path / f"univariate_ranked_features{suffix}.csv", index_col=0)
+        # apply_univariate_feature_selection also saves a "<test>_score"
+        # column next to each "<test>" feature-name column - only the
+        # feature-name columns are rank->feature mappings.
+        univariate = univariate[[c for c in univariate.columns if not c.endswith('_score')]]
+        multivariate = pd.read_csv(results_path / f"multivariate_ranked_features{suffix}.csv", index_col=0)
 
-        combined = pd.DataFrame({
-            "majority_voting": majority["feature"],
-            "rank_aggregation": rank_agg["feature"],
+        # invert rank->feature (per method) into feature->rank, across
+        # every univariate and multivariate method at once.
+        rank_lookup = pd.DataFrame({
+            method: pd.Series(df.index, index=df[method])
+            for df in (univariate, multivariate)
+            for method in df.columns
         })
-        combined.index = range(1, len(combined) + 1)
-        combined.index.name = "rank"
-        print(combined)
+
+        aggregated = pd.DataFrame({
+            "mean": rank_lookup.mean(axis=1, skipna=True).sort_values().index,
+            "median": rank_lookup.median(axis=1, skipna=True).sort_values().index,
+            "product": rank_lookup.prod(axis=1, skipna=True).sort_values().index,
+        })
+        aggregated.index = range(1, len(aggregated) + 1)
+        aggregated.index.name = "rank"
+        print(aggregated)
 
         if save:
-            out = results_path / f"{prefix}majority_rank_ranked_features{suffix}.csv"
-            combined.to_csv(out)
+            out = results_path / f"aggregated_ranked_features{suffix}.csv"
+            aggregated.to_csv(out)
             print(f"Saved {out}")
 
-        return combined
+        return aggregated
 
     def _relevance(self, X_train, y_train, score_func):
         """
