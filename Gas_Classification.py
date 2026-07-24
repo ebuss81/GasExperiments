@@ -721,13 +721,13 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        #GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas)
-        multivariate_path = (
-            GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
-            / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
-        )
-        GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
-                                            keep_classes=classes, gas=gas)
+        GC.compute_feature_subset_accuracy(use_aggregated_ranking=True, max_features=10000, save=True, keep_classes=classes, gas=gas)
+        #multivariate_path = (
+        #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
+        #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
+        #)
+        #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
+        #                                    keep_classes=classes, gas=gas)
         #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas)
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
