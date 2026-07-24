@@ -15,3 +15,4 @@ torch==2.7.0
 tabpfn==8.0.8
 tabicl==2.1.1
 PyQt5==5.15.11
+kneed==0.8.6

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from joblib import dump, load
 from sklearn.metrics import classification_report, confusion_matrix, ConfusionMatrixDisplay, f1_score
 from sklearn.base import clone
+from kneed import KneeLocator
 import naiveautoml
 from naiveautoml.evaluators import SplitBasedEvaluator
 import matplotlib
@@ -570,8 +571,31 @@ class GasClassification:
 
         return table
 
+    def _select_best_n_features(self, val, min_delta, method, column='accuracy'):
+        """
+        Pick a "best" row from `val` (a DataFrame with 'n_features' and
+        `column` columns, sorted by n_features and already smoothed if
+        desired) via method='tolerance'|'knee' - shared by
+        get_best_feature_subsets_metrics and plot_feature_subset_accuracy
+        so both pick the same point the same way. See
+        get_best_feature_subsets_metrics's docstring for what each method
+        does.
+        """
+        peak = val[column].max()
+        if method == 'knee' and len(val) >= 3:
+            knee = KneeLocator(val['n_features'], val[column], curve='concave', direction='increasing')
+            if knee.knee is not None:
+                return val.loc[(val['n_features'] - knee.knee).abs().idxmin()]
+        # 'tolerance' (default), or 'knee' with too few points / no
+        # detectable bend - smallest n_features within min_delta of the
+        # true peak, not the raw argmax, so a negligible gain doesn't win
+        # out over fewer features.
+        within_tolerance = val[val[column] >= peak - min_delta]
+        return within_tolerance.iloc[0]
+
     def plot_feature_subset_accuracy(self, out_name=None, show=True, save=True, metric="accuracy",
-                                      keep_classes=None, drop_classes=None, gas=None):
+                                      keep_classes=None, drop_classes=None, gas=None, rolling_window=None,
+                                      mark_best=False, min_delta=0.01, method='tolerance'):
         """
         Load every CSV in results_path/feature_acc_lists_to_plot whose
         filename matches this scope (written by compute_feature_subset_accuracy
@@ -591,6 +615,23 @@ class GasClassification:
 
         metric selects which column to plot: "accuracy" (default) or
         "f1_score" - both are saved by compute_feature_subset_accuracy.
+
+        rolling_window, if given (an int > 1), smooths each plotted line
+        with a centered rolling mean of that many points over n_features
+        (min_periods=1, so the ends aren't cut short) - useful since the
+        raw accuracy-vs-n_features curve is often noisy step to step. Only
+        affects what's drawn, not the returned/saved data. Single-row
+        baseline series (e.g. "all_features") are left as-is - a rolling
+        mean of one point is meaningless.
+
+        mark_best, if True, marks each multi-point series' "best"
+        n_features (picked from its val curve via
+        get_best_feature_subsets_metrics's same min_delta/method logic -
+        see that method's docstring) with a star on every subplot, in
+        that series' own line color. Note the point is always picked from
+        the *val* metric curve, same as get_best_feature_subsets_metrics,
+        even when plotting metric="f1_score" - so what's marked is
+        "best by validation metric", consistent across subplots.
         """
         self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
@@ -602,6 +643,18 @@ class GasClassification:
         frames = [pd.read_csv(f) for f in csv_files]
         data = pd.concat(frames, ignore_index=True)
         data['series'] = data['source'] + ':' + data['approach']
+
+        best_n_by_series = {}
+        if mark_best:
+            val_only = data[data['split'] == 'val']
+            for series_name, group in val_only.groupby('series'):
+                group = group.sort_values('n_features').copy()
+                if len(group) < 2:
+                    continue  # nothing to mark on a single-point baseline
+                if rolling_window and rolling_window > 1:
+                    group[metric] = group[metric].rolling(window=rolling_window, min_periods=1, center=True).mean()
+                best = self._select_best_n_features(group, min_delta, method, column=metric)
+                best_n_by_series[series_name] = best['n_features']
 
         fig, axes = plt.subplots(3, 1, figsize=(9, 12), sharex=True)
         # baselines (single-row series, e.g. "all_features") shouldn't
@@ -616,7 +669,16 @@ class GasClassification:
                 if len(group) == 1:
                     ax.hlines(group[metric].iloc[0], x_min, x_max, linestyles='--', label=series_name)
                 else:
-                    ax.plot(group['n_features'], group[metric], label=series_name, marker='.')
+                    y = group[metric]
+                    if rolling_window and rolling_window > 1:
+                        y = y.rolling(window=rolling_window, min_periods=1, center=True).mean()
+                    line, = ax.plot(group['n_features'], y, label=series_name, marker='.')
+                    if series_name in best_n_by_series:
+                        best_n = best_n_by_series[series_name]
+                        match = group['n_features'] == best_n
+                        if match.any():
+                            ax.scatter(best_n, y.loc[match.idxmax()], marker='*', s=200,
+                                       color=line.get_color(), edgecolor='black', linewidth=0.8, zorder=5)
             ax.set_xlim(x_min, x_max)
             ax.set_title(f"{split.capitalize()} {metric}")
             ax.set_ylabel(metric.replace('_', ' ').capitalize())
@@ -640,23 +702,40 @@ class GasClassification:
 
         return data
 
-    def get_best_feature_subsets_metrics(self, keep_classes=None, drop_classes=None, gas=None, min_delta=0.01):
+    def get_best_feature_subsets_metrics(self, keep_classes=None, drop_classes=None, gas=None, min_delta=0.01,
+                                          rolling_window=None, method='tolerance'):
         """
         For every feature-selection approach found in
         results_path/feature_acc_lists_to_plot for this scope (written by
         compute_feature_subset_accuracy, same file-matching as
-        plot_feature_subset_accuracy), find the smallest n_features whose
-        validation accuracy is within min_delta (default 1 percentage
-        point) of that approach's true peak validation accuracy, and
-        print/return that val accuracy alongside the accuracy on the test
-        split *at that same n_features* - not the best test accuracy,
-        which would leak information from picking n_features using the
-        test set itself.
+        plot_feature_subset_accuracy), pick a "best" n_features from that
+        approach's (optionally smoothed) validation-accuracy-vs-n_features
+        curve, and print/return that val accuracy alongside the accuracy
+        on the test split *at that same n_features* - not the best test
+        accuracy, which would leak information from picking n_features
+        using the test set itself.
 
-        Picking the smallest n_features within min_delta of the true peak
-        (rather than the raw argmax) avoids preferring a larger, noisier
-        feature count for a negligible/within-noise accuracy gain -
-        min_delta=0 recovers the raw-argmax behavior.
+        method selects how "best" is picked from the curve:
+        - 'tolerance' (default): the smallest n_features within min_delta
+          (default 1 percentage point) of the true peak validation
+          accuracy - avoids preferring a larger, noisier feature count for
+          a negligible/within-noise accuracy gain. min_delta=0 recovers
+          the raw-argmax behavior.
+        - 'knee': the curve's knee/elbow point (kneed.KneeLocator,
+          curve='concave', direction='increasing') - where accuracy stops
+          rising and starts flattening out as n_features grows. Doesn't
+          use min_delta at all. Falls back to the plain peak (argmax) if
+          the series has fewer than 3 points or KneeLocator can't find a
+          bend (e.g. a flat or strictly monotonic curve).
+
+        rolling_window, if given (an int > 1), smooths each series'
+        validation accuracy with a centered rolling mean (min_periods=1,
+        same as plot_feature_subset_accuracy) over n_features *before*
+        picking "best" (either way) - reduces the risk of the raw
+        step-to-step noise picking out a one-off spike, or kneed
+        mistaking noise for the bend. The reported val accuracy is this
+        smoothed value; the reported test accuracy is still the genuine
+        (unsmoothed) test accuracy at the chosen n_features.
 
         keep_classes/drop_classes/gas must match what
         compute_feature_subset_accuracy was called with - only tables
@@ -678,15 +757,14 @@ class GasClassification:
 
         rows = []
         for series_name, group in data.groupby('series'):
-            val = group[group['split'] == 'val'].sort_values('n_features')
+            val = group[group['split'] == 'val'].sort_values('n_features').copy()
             if val.empty:
                 continue
+            if rolling_window and rolling_window > 1:
+                val['accuracy'] = val['accuracy'].rolling(window=rolling_window, min_periods=1, center=True).mean()
             peak_accuracy = val['accuracy'].max()
-            # Smallest n_features within min_delta of the true peak, not
-            # the raw argmax - avoids preferring more features for a
-            # negligible accuracy gain.
-            within_tolerance = val[val['accuracy'] >= peak_accuracy - min_delta]
-            best = within_tolerance.iloc[0]
+
+            best = self._select_best_n_features(val, min_delta, method)
             best_n = best['n_features']
 
             test = group[(group['split'] == 'test') & (group['n_features'] == best_n)]
@@ -721,14 +799,14 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        GC.compute_feature_subset_accuracy(use_aggregated_ranking=True, max_features=10000, save=True, keep_classes=classes, gas=gas)
+        #GC.compute_feature_subset_accuracy(use_aggregated_ranking=True, max_features=10000, save=True, keep_classes=classes, gas=gas)
         #multivariate_path = (
         #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
         #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
         #)
         #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
         #                                    keep_classes=classes, gas=gas)
-        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas)
+        GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=31, mark_best=True, method='tolerance')
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
@@ -739,6 +817,6 @@ if __name__ == "__main__":
         #fs.apply_multivariate_feature_selection(data_init, k=200, save=True, keep_classes=classes, gas=gas)
         #fs.aggregate_features(keep_classes=classes, gas=gas)
         #GC.plot_feature_subset_accuracy(out_name="AutoML", metric="accuracy", keep_classes=classes, gas=gas)
-        #GC.get_best_feature_subsets_metrics(keep_classes=classes, gas=gas)
+        #GC.get_best_feature_subsets_metrics(keep_classes=classes, gas=gas, rolling_window=1)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True
