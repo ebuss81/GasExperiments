@@ -928,7 +928,7 @@ if __name__ == "__main__":
         #)
         #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
         #                                    keep_classes=classes, gas=gas)
-        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized')
+        GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized')
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
