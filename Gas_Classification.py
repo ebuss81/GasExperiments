@@ -431,7 +431,8 @@ class GasClassification:
     def compute_feature_subset_accuracy(self, target='class',
                                          ranked_features_path=None, use_aggregated_ranking=False,
                                          max_features=100, save=True, fold=0,
-                                         keep_classes=None, drop_classes=None, gas=None):
+                                         keep_classes=None, drop_classes=None, gas=None,
+                                         use_experiment_folds=False, n_features_grid=None):
         """
         For each feature-selection approach (column) in a ranked-features
         CSV, repeatedly clone+train the AutoML-selected best classifier for
@@ -459,10 +460,11 @@ class GasClassification:
 
         Unlike the old train_classifier_feature_subset, this does not plot
         anything itself - it saves one long-format CSV (columns: source,
-        approach, n_features, split, accuracy) per call, under results_path.
-        Call this once per ranked-features file/approach set you want to
-        compare, then use plot_feature_subset_accuracy to load any
-        combination of the resulting tables onto one figure.
+        approach, n_features, split, accuracy, f1_score, fold) per call,
+        under results_path. Call this once per ranked-features file/
+        approach set you want to compare, then use
+        plot_feature_subset_accuracy to load any combination of the
+        resulting tables onto one figure.
 
         Which ranked-features file is read is chosen, in order of priority:
         1. ranked_features_path, if given - any ranked-features CSV, e.g.
@@ -476,15 +478,54 @@ class GasClassification:
         written by make_data_set - pass a fold index (e.g. fold=0) to
         instead read splits_path/fold_<fold>/{train,val,test}.csv, as
         written by make_experiment_cv_folds, when the flat split hasn't been
-        generated.
+        generated. Ignored when use_experiment_folds=True (see below) -
+        that's a different notion of "fold" from this one.
+
+        use_experiment_folds=True switches from that single fixed train/
+        val/test split to the same leave-one-experiment-out-per-gas CV
+        folds auto_ml uses (ExperimentFolds._build_experiment_fold_indices)
+        - the whole sweep below runs once per fold instead of once total,
+        giving repeated measurements per n_features (a real spread across
+        folds) rather than a single point estimate. Each fold's own
+        held-out rows become that run's 'val' split; the one experiment
+        per gas reserved as the final test set is reused as 'test' for
+        every fold (it's the same genuinely unseen data regardless of
+        fold). The saved table's 'fold' column records which run each row
+        came from (None in the default single-split mode).
+
+        n_features_grid, if given (a list of ints), sweeps exactly those
+        n_features values (deduplicated, sorted, clipped to
+        min(max_features, available features)) instead of every integer
+        from 1 to max_features - much cheaper, and close to necessary once
+        use_experiment_folds multiplies the work by the fold count.
+        Defaults to a log-spaced grid ([1, 2, 3, 5, 10, 20, 30, 50, 75,
+        100, 150, 200, 300, 500, 782]) when use_experiment_folds=True and
+        no grid is given; with use_experiment_folds=False the dense
+        range(1, n_max+1) sweep is kept unless a grid is explicitly passed.
         """
         self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
-        data_init, groups = utils.load_and_process_data_for_classification(
-            self.folds, apply_smote=False, scale=True, apply_undersample=False, target=target, fold=fold,
-            keep_classes=keep_classes, drop_classes=drop_classes, gas=gas,
-        )
-
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
+
+        if use_experiment_folds:
+            X_dev, y_dev, fold_index_pairs, X_test_final, y_test_final = self.folds._build_experiment_fold_indices(
+                target=target, keep_classes=keep_classes, drop_classes=drop_classes, gas=gas,
+            )
+            fold_runs = [
+                {'fold': i,
+                 'train': {'X': X_dev.iloc[train_idx], 'y': y_dev.iloc[train_idx]},
+                 'val': {'X': X_dev.iloc[test_idx], 'y': y_dev.iloc[test_idx]},
+                 'test': {'X': X_test_final, 'y': y_test_final}}
+                for i, (train_idx, test_idx) in enumerate(fold_index_pairs)
+            ]
+            if n_features_grid is None:
+                n_features_grid = [1, 2, 3, 5, 10, 20, 30, 50, 75, 100, 150, 200, 300, 500, 782]
+        else:
+            data_init, groups = utils.load_and_process_data_for_classification(
+                self.folds, apply_smote=False, scale=True, apply_undersample=False, target=target, fold=fold,
+                keep_classes=keep_classes, drop_classes=drop_classes, gas=gas,
+            )
+            fold_runs = [{'fold': None, **data_init}]
+
         best_pipeline_template = load(
             results_path / self.classifier_name / f"{self.classifier_name}_best_classifier.joblib"
         )
@@ -519,46 +560,54 @@ class GasClassification:
         approaches = [c for c in ranked_df.columns if not c.endswith('_score')]
         source = Path(ranked_features_path).stem
 
-        available = set(data_init['train']['X'].columns)
         rows = []
 
-        for approach in approaches:
-            ranked_list = [f for f in ranked_df[approach].dropna().tolist() if f in available]
-            n_max = min(max_features, len(ranked_list))
-            print(f"=== {approach} ({n_max} feature counts) ===")
+        for run in fold_runs:
+            fold_id = run['fold']
+            available = set(run['train']['X'].columns)
 
-            for n in range(1, n_max + 1):
-                print(f"{approach}_{n}")
-                subset = ranked_list[:n]
-                clf = clone(best_learner_template)
-                clf.fit(data_init['train']['X'][subset], data_init['train']['y'])
+            for approach in approaches:
+                ranked_list = [f for f in ranked_df[approach].dropna().tolist() if f in available]
+                n_max = min(max_features, len(ranked_list))
+                if n_features_grid is not None:
+                    sweep_ns = sorted({n for n in n_features_grid if 1 <= n <= n_max})
+                else:
+                    sweep_ns = list(range(1, n_max + 1))
+                print(f"=== fold={fold_id} {approach} ({len(sweep_ns)} feature counts) ===")
 
-                for split in ('train', 'val', 'test'):
-                    X_split, y_split = data_init[split]['X'][subset], data_init[split]['y']
-                    score = clf.score(X_split, y_split)
-                    f1 = f1_score(y_split, clf.predict(X_split), average='macro')
-                    rows.append({'source': source, 'approach': approach, 'n_features': n,
-                                 'split': split, 'accuracy': score, 'f1_score': f1})
+                for n in sweep_ns:
+                    print(f"{approach}_{n}")
+                    subset = ranked_list[:n]
+                    clf = clone(best_learner_template)
+                    clf.fit(run['train']['X'][subset], run['train']['y'])
 
-            if n_max:
-                last = {r['split']: r['accuracy'] for r in rows
-                        if r['approach'] == approach and r['n_features'] == n_max}
-                print(f"  final (n={n_max}) train/val/test accuracy: "
-                      f"{last['train']:.4f} / {last['val']:.4f} / {last['test']:.4f}")
+                    for split in ('train', 'val', 'test'):
+                        X_split, y_split = run[split]['X'][subset], run[split]['y']
+                        score = clf.score(X_split, y_split)
+                        f1 = f1_score(y_split, clf.predict(X_split), average='macro')
+                        rows.append({'source': source, 'approach': approach, 'n_features': n,
+                                     'split': split, 'accuracy': score, 'f1_score': f1, 'fold': fold_id})
 
-        # "all_features" baseline: trained once on every available feature,
-        # stored as a single row per split (n_features = total count) -
-        # plot_feature_subset_accuracy draws single-row approaches as a
-        # flat reference line rather than a point.
-        all_features = sorted(available)
-        clf = clone(best_learner_template)
-        clf.fit(data_init['train']['X'][all_features], data_init['train']['y'])
-        for split in ('train', 'val', 'test'):
-            X_split, y_split = data_init[split]['X'][all_features], data_init[split]['y']
-            score = clf.score(X_split, y_split)
-            f1 = f1_score(y_split, clf.predict(X_split), average='macro')
-            rows.append({'source': source, 'approach': 'all_features', 'n_features': len(all_features),
-                         'split': split, 'accuracy': score, 'f1_score': f1})
+                if sweep_ns:
+                    last_n = sweep_ns[-1]
+                    last = {r['split']: r['accuracy'] for r in rows
+                            if r['approach'] == approach and r['n_features'] == last_n and r['fold'] == fold_id}
+                    print(f"  final (n={last_n}) train/val/test accuracy: "
+                          f"{last['train']:.4f} / {last['val']:.4f} / {last['test']:.4f}")
+
+            # "all_features" baseline: trained once on every available
+            # feature, stored as a single row per split (n_features =
+            # total count) - plot_feature_subset_accuracy draws single-row
+            # approaches as a flat reference line rather than a point.
+            all_features = sorted(available)
+            clf = clone(best_learner_template)
+            clf.fit(run['train']['X'][all_features], run['train']['y'])
+            for split in ('train', 'val', 'test'):
+                X_split, y_split = run[split]['X'][all_features], run[split]['y']
+                score = clf.score(X_split, y_split)
+                f1 = f1_score(y_split, clf.predict(X_split), average='macro')
+                rows.append({'source': source, 'approach': 'all_features', 'n_features': len(all_features),
+                             'split': split, 'accuracy': score, 'f1_score': f1, 'fold': fold_id})
 
         table = pd.DataFrame(rows)
 
@@ -571,11 +620,12 @@ class GasClassification:
 
         return table
 
-    def _select_best_n_features(self, val, min_delta, method, column='accuracy'):
+    def _select_best_n_features(self, val, min_delta, method, column='accuracy', total_features=None,
+                                 lambda_penalty=0.1):
         """
         Pick a "best" row from `val` (a DataFrame with 'n_features' and
         `column` columns, sorted by n_features and already smoothed if
-        desired) via method='tolerance'|'knee' - shared by
+        desired) via method='tolerance'|'knee'|'penalized' - shared by
         get_best_feature_subsets_metrics and plot_feature_subset_accuracy
         so both pick the same point the same way. See
         get_best_feature_subsets_metrics's docstring for what each method
@@ -586,6 +636,16 @@ class GasClassification:
             knee = KneeLocator(val['n_features'], val[column], curve='concave', direction='increasing')
             if knee.knee is not None:
                 return val.loc[(val['n_features'] - knee.knee).abs().idxmin()]
+        if method == 'penalized':
+            # score(k) = performance(k) - lambda * (k / total_features):
+            # directly trades off validation performance against feature
+            # count, rather than a hard tolerance/cutoff rule. Pick the
+            # n_features that maximizes this score. total_features
+            # defaults to this series' own largest swept n_features if
+            # the true full feature count isn't known.
+            n_total = total_features or val['n_features'].max()
+            score = val[column] - lambda_penalty * (val['n_features'] / n_total)
+            return val.loc[score.idxmax()]
         # 'tolerance' (default), or 'knee' with too few points / no
         # detectable bend - smallest n_features within min_delta of the
         # true peak, not the raw argmax, so a negligible gain doesn't win
@@ -595,7 +655,7 @@ class GasClassification:
 
     def plot_feature_subset_accuracy(self, out_name=None, show=True, save=True, metric="accuracy",
                                       keep_classes=None, drop_classes=None, gas=None, rolling_window=None,
-                                      mark_best=False, min_delta=0.01, method='tolerance'):
+                                      mark_best=False, min_delta=0.01, method='tolerance', lambda_penalty=0.5):
         """
         Load every CSV in results_path/feature_acc_lists_to_plot whose
         filename matches this scope (written by compute_feature_subset_accuracy
@@ -626,12 +686,13 @@ class GasClassification:
 
         mark_best, if True, marks each multi-point series' "best"
         n_features (picked from its val curve via
-        get_best_feature_subsets_metrics's same min_delta/method logic -
-        see that method's docstring) with a star on every subplot, in
-        that series' own line color. Note the point is always picked from
-        the *val* metric curve, same as get_best_feature_subsets_metrics,
-        even when plotting metric="f1_score" - so what's marked is
-        "best by validation metric", consistent across subplots.
+        get_best_feature_subsets_metrics's same min_delta/method/
+        lambda_penalty logic - see that method's docstring) with a star
+        on every subplot, in that series' own line color. Note the point
+        is always picked from the *val* metric curve, same as
+        get_best_feature_subsets_metrics, even when plotting
+        metric="f1_score" - so what's marked is "best by validation
+        metric", consistent across subplots.
         """
         self.classifier_name = "NaiveAutoML" + utils.scope_suffix(gas, keep_classes, drop_classes)
         results_path = self.folds.resolve_config_path(self.folds.config_paths['results_path'])
@@ -646,6 +707,8 @@ class GasClassification:
 
         best_n_by_series = {}
         if mark_best:
+            all_features_rows = data[data['approach'] == 'all_features']
+            total_features = all_features_rows['n_features'].max() if not all_features_rows.empty else None
             val_only = data[data['split'] == 'val']
             for series_name, group in val_only.groupby('series'):
                 group = group.sort_values('n_features').copy()
@@ -653,7 +716,8 @@ class GasClassification:
                     continue  # nothing to mark on a single-point baseline
                 if rolling_window and rolling_window > 1:
                     group[metric] = group[metric].rolling(window=rolling_window, min_periods=1, center=True).mean()
-                best = self._select_best_n_features(group, min_delta, method, column=metric)
+                best = self._select_best_n_features(group, min_delta, method, column=metric,
+                                                     total_features=total_features, lambda_penalty=lambda_penalty)
                 best_n_by_series[series_name] = best['n_features']
 
         fig, axes = plt.subplots(3, 1, figsize=(9, 12), sharex=True)
@@ -703,7 +767,7 @@ class GasClassification:
         return data
 
     def get_best_feature_subsets_metrics(self, keep_classes=None, drop_classes=None, gas=None, min_delta=0.01,
-                                          rolling_window=None, method='tolerance'):
+                                          rolling_window=None, method='tolerance', lambda_penalty=0.1):
         """
         For every feature-selection approach found in
         results_path/feature_acc_lists_to_plot for this scope (written by
@@ -727,6 +791,14 @@ class GasClassification:
           use min_delta at all. Falls back to the plain peak (argmax) if
           the series has fewer than 3 points or KneeLocator can't find a
           bend (e.g. a flat or strictly monotonic curve).
+        - 'penalized': maximizes score(k) = val_accuracy(k) -
+          lambda_penalty * (k / total_features), where total_features is
+          the full feature count (from this scope's "all_features" row)
+          - directly trades off validation performance against feature
+          count in one objective, rather than a hard cutoff/tolerance
+          rule. Larger lambda_penalty favors smaller feature subsets more
+          aggressively; lambda_penalty=0 recovers the raw-argmax
+          behavior.
 
         rolling_window, if given (an int > 1), smooths each series'
         validation accuracy with a centered rolling mean (min_periods=1,
@@ -755,6 +827,9 @@ class GasClassification:
 
         print(f"\n{'=' * 70}\nBest feature-subset results for {self.classifier_name}\n{'=' * 70}")
 
+        all_features_rows = data[data['approach'] == 'all_features']
+        total_features = all_features_rows['n_features'].max() if not all_features_rows.empty else None
+
         rows = []
         for series_name, group in data.groupby('series'):
             val = group[group['split'] == 'val'].sort_values('n_features').copy()
@@ -764,7 +839,8 @@ class GasClassification:
                 val['accuracy'] = val['accuracy'].rolling(window=rolling_window, min_periods=1, center=True).mean()
             peak_accuracy = val['accuracy'].max()
 
-            best = self._select_best_n_features(val, min_delta, method)
+            best = self._select_best_n_features(val, min_delta, method, total_features=total_features,
+                                                 lambda_penalty=lambda_penalty)
             best_n = best['n_features']
 
             test = group[(group['split'] == 'test') & (group['n_features'] == best_n)]
@@ -799,14 +875,14 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas)
-        multivariate_path = (
-            GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
-            / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
-        )
-        GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
-                                            keep_classes=classes, gas=gas)
-        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='tolerance')
+        GC.compute_feature_subset_accuracy(use_aggregated_ranking=True, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=[1,5,10])
+        #multivariate_path = (
+        #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
+        #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
+        #)
+        #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
+        #                                    keep_classes=classes, gas=gas)
+        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized')
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
