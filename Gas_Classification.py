@@ -894,13 +894,14 @@ class GasClassification:
 
         rows = []
         for series_name, group in data.groupby('series'):
-            val = group[group['split'] == 'val']
-            if val.empty:
+            val_raw = group[group['split'] == 'val']
+            if val_raw.empty:
                 continue
             # Collapse multiple folds' val rows at the same n_features into
-            # one mean before picking "best" - a no-op for old single-run
-            # tables (one row per n_features already).
-            val = self._aggregate_over_folds(val, 'accuracy')
+            # one mean (+ std, printed below as a stability check) before
+            # picking "best" - a no-op for old single-run tables (one row
+            # per n_features already).
+            val = self._aggregate_over_folds(val_raw, 'accuracy')
             if rolling_window and rolling_window > 1:
                 val['accuracy'] = val['accuracy'].rolling(window=rolling_window, min_periods=1, center=True).mean()
             peak_accuracy = val['accuracy'].max()
@@ -908,6 +909,7 @@ class GasClassification:
             best = self._select_best_n_features(val, min_delta, method, total_features=total_features,
                                                  lambda_penalty=lambda_penalty)
             best_n = best['n_features']
+            val_n_folds = (val_raw['n_features'] == best_n).sum()
 
             # Same averaging for the reported test accuracy: with multiple
             # folds, each fold refit a different classifier but scored it
@@ -918,15 +920,20 @@ class GasClassification:
             test_std = test['accuracy'].std() if len(test) > 1 else float('nan')
 
             print(f"\n{series_name}\n{'-' * len(series_name)}")
-            print(f"  best val accuracy  : {best['accuracy']:.4f}  (n_features={best_n}, "
-                  f"true peak={peak_accuracy:.4f})")
+            if pd.notna(best['accuracy_std']) and val_n_folds > 1:
+                print(f"  best val accuracy  : {best['accuracy']:.4f} +/- {best['accuracy_std']:.4f}  "
+                      f"(n_features={best_n}, across {val_n_folds} folds, true peak={peak_accuracy:.4f})")
+            else:
+                print(f"  best val accuracy  : {best['accuracy']:.4f}  (n_features={best_n}, "
+                      f"true peak={peak_accuracy:.4f})")
             if pd.notna(test_std):
                 print(f"  test accuracy      : {test_acc:.4f} +/- {test_std:.4f}  "
                       f"(at n_features={best_n}, across {len(test)} folds)")
             else:
                 print(f"  test accuracy      : {test_acc:.4f}  (at n_features={best_n})")
             rows.append({'series': series_name, 'n_features': best_n,
-                         'val_accuracy': best['accuracy'], 'test_accuracy': test_acc})
+                         'val_accuracy': best['accuracy'], 'val_accuracy_std': best['accuracy_std'],
+                         'test_accuracy': test_acc})
 
         results = pd.DataFrame(rows).sort_values('val_accuracy', ascending=False).reset_index(drop=True)
 
@@ -950,13 +957,13 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
-        multivariate_path = (
-            GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
-            / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
-        )
-        GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
-        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized',lambda_penalty=0.1, show_all_folds=False)
+        #GC.compute_feature_subset_accuracy(use_aggregated_ranking=True, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
+        #multivariate_path = (
+        #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
+        ##    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
+        ##)
+        #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
+        GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized',lambda_penalty=0.05, show_all_folds=False)
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
@@ -967,6 +974,6 @@ if __name__ == "__main__":
         #fs.apply_multivariate_feature_selection(data_init, k=200, save=True, keep_classes=classes, gas=gas)
         #fs.aggregate_features(keep_classes=classes, gas=gas)
         #GC.plot_feature_subset_accuracy(out_name="AutoML", metric="accuracy", keep_classes=classes, gas=gas)
-        #GC.get_best_feature_subsets_metrics(keep_classes=classes, gas=gas, rolling_window=1)
+        #GC.get_best_feature_subsets_metrics(keep_classes=classes, gas=gas, rolling_window=1, method='penalized',lambda_penalty=0.05)
     #fs.apply_mrmr(data_init, None, save=True)
     # fs.apply_multivariate_feature_selection(data_init,k=10000,save=True
