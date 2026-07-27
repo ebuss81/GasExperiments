@@ -670,7 +670,8 @@ class GasClassification:
 
     def plot_feature_subset_accuracy(self, out_name=None, show=True, save=True, metric="accuracy",
                                       keep_classes=None, drop_classes=None, gas=None, rolling_window=None,
-                                      mark_best=False, min_delta=0.01, method='tolerance', lambda_penalty=0.5):
+                                      mark_best=False, min_delta=0.01, method='tolerance', lambda_penalty=0.5,
+                                      show_all_folds=False):
         """
         Load every CSV in results_path/feature_acc_lists_to_plot whose
         filename matches this scope (written by compute_feature_subset_accuracy
@@ -685,11 +686,20 @@ class GasClassification:
 
         If the table has multiple folds (compute_feature_subset_accuracy
         was called with use_experiment_folds=True), each series' rows are
-        first collapsed to one point per n_features: the mean across
+        by default collapsed to one point per n_features: the mean across
         folds, plotted as the line, with a shaded +-1 std band around it.
         Old single-run tables (one row per n_features already) are
         unaffected - the "mean" is just that one value and there's no
         band to draw.
+
+        show_all_folds, if True, replaces that mean+band with every
+        fold's own raw curve plotted individually - all folds of the same
+        series share one color (semi-transparent, so overlapping folds
+        stay distinguishable), instead of collapsing them. Falls back to
+        the mean+band behavior for any series with only one fold's worth
+        of data (nothing to usefully show separately). mark_best's star
+        is still picked from the fold-mean val curve either way, for a
+        consistent "best" definition regardless of how it's drawn.
 
         keep_classes/drop_classes/gas must match what
         compute_feature_subset_accuracy was called with - only tables saved
@@ -754,28 +764,47 @@ class GasClassification:
             split_data = data[data['split'] == split]
             for series_name, group in split_data.groupby('series'):
                 # Collapse multiple folds' rows at the same n_features into
-                # one mean (+ std, for the shaded band below) - a no-op
-                # for old single-run tables, which only ever have one row
-                # per n_features already.
-                group = self._aggregate_over_folds(group, metric)
-                if len(group) == 1:
-                    ax.hlines(group[metric].iloc[0], x_min, x_max, linestyles='--', label=series_name)
+                # one mean (+ std) - a no-op for old single-run tables,
+                # which only ever have one row per n_features already.
+                # Always computed (even when show_all_folds draws the raw
+                # per-fold lines below instead) so mark_best's star has one
+                # consistent "best" value to plot regardless of view.
+                agg = self._aggregate_over_folds(group, metric)
+                if len(agg) == 1:
+                    ax.hlines(agg[metric].iloc[0], x_min, x_max, linestyles='--', label=series_name)
+                    continue
+
+                y_mean = agg[metric]
+                y_std = agg[f'{metric}_std']
+                if rolling_window and rolling_window > 1:
+                    y_mean = y_mean.rolling(window=rolling_window, min_periods=1, center=True).mean()
+                    y_std = y_std.rolling(window=rolling_window, min_periods=1, center=True).mean()
+
+                if show_all_folds and group['fold'].nunique() > 1:
+                    color = None
+                    for fold_id, fold_group in group.groupby('fold'):
+                        fold_group = fold_group.sort_values('n_features')
+                        if len(fold_group) < 2:
+                            continue
+                        fold_y = fold_group[metric]
+                        if rolling_window and rolling_window > 1:
+                            fold_y = fold_y.rolling(window=rolling_window, min_periods=1, center=True).mean()
+                        line, = ax.plot(fold_group['n_features'], fold_y, color=color, alpha=0.5, linewidth=1,
+                                         label=series_name if color is None else None)
+                        color = color or line.get_color()
                 else:
-                    y = group[metric]
-                    y_std = group[f'{metric}_std']
-                    if rolling_window and rolling_window > 1:
-                        y = y.rolling(window=rolling_window, min_periods=1, center=True).mean()
-                        y_std = y_std.rolling(window=rolling_window, min_periods=1, center=True).mean()
-                    line, = ax.plot(group['n_features'], y, label=series_name, marker='.')
+                    line, = ax.plot(agg['n_features'], y_mean, label=series_name, marker='.')
+                    color = line.get_color()
                     if y_std.notna().any():
-                        ax.fill_between(group['n_features'], y - y_std.fillna(0), y + y_std.fillna(0),
-                                         color=line.get_color(), alpha=0.15, linewidth=0)
-                    if series_name in best_n_by_series:
-                        best_n = best_n_by_series[series_name]
-                        match = group['n_features'] == best_n
-                        if match.any():
-                            ax.scatter(best_n, y.loc[match.idxmax()], marker='*', s=200,
-                                       color=line.get_color(), edgecolor='black', linewidth=0.8, zorder=5)
+                        ax.fill_between(agg['n_features'], y_mean - y_std.fillna(0), y_mean + y_std.fillna(0),
+                                         color=color, alpha=0.15, linewidth=0)
+
+                if series_name in best_n_by_series:
+                    best_n = best_n_by_series[series_name]
+                    match = agg['n_features'] == best_n
+                    if match.any():
+                        ax.scatter(best_n, y_mean.loc[match.idxmax()], marker='*', s=200,
+                                   color=color, edgecolor='black', linewidth=0.8, zorder=5)
             ax.set_xlim(x_min, x_max)
             ax.set_title(f"{split.capitalize()} {metric}")
             ax.set_ylabel(metric.replace('_', ' ').capitalize())
@@ -921,14 +950,14 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
+        #GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
         #multivariate_path = (
         #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
         #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
         #)
         #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
         #                                    keep_classes=classes, gas=gas)
-        GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized')
+        GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized',lambda_penalty=0.1, show_all_folds=False)
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
