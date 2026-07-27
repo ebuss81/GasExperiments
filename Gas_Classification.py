@@ -548,6 +548,7 @@ class GasClassification:
         # data purely from training-time randomness (bootstrap sampling,
         # random splits, ...), not any real data difference. Pin it so
         # every clone(best_learner_template).fit(...) below is reproducible.
+
         if 'random_state' in best_learner_template.get_params():
             best_learner_template.set_params(random_state=42)
 

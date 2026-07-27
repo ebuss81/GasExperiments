@@ -251,7 +251,12 @@ class ExperimentFolds:
           re-indexed 0..n-1 so fold_index_pairs' positions line up.
         - fold_index_pairs: list of (train_index, test_index) position
           arrays into X_dev/y_dev - number of folds = max(per-gas dev
-          experiment count) across gases.
+          experiment count) across only the gas(es) actually in scope
+          (gas param), not always all of self.gases - a single-gas scope
+          isn't padded out to match a different gas's larger experiment
+          count, which would otherwise cycle/duplicate held-out
+          experiments once the fold index wraps past this gas's own
+          count.
         - X_test/y_test: rows from the reserved (index 0) experiment per
           gas - never touched by any fold, for a final one-shot evaluation.
 
@@ -288,10 +293,17 @@ class ExperimentFolds:
                          'prestimulus', target]
         X_full = data.drop(columns=[c for c in meta_columns if c in data.columns])
 
+        # Only size/loop folds over the gas(es) actually in scope - using
+        # self.gases here even when scoped to e.g. gas='CO2' would size
+        # n_folds off other gases' experiment counts and needlessly
+        # cycle/duplicate CO2's own held-out experiments once
+        # fold >= CO2's own dev experiment count.
+        gases_for_folds = gases_to_keep if gases_to_keep is not None else self.gases
+
         # Reserve experiment index 0 per gas as the final, untouched test
         # set - the same experiments make_data_set holds out.
         final_test_mask = pd.Series(False, index=data.index)
-        for gas in self.gases:
+        for gas in gases_for_folds:
             experiment_name, start_dt, end_dt = self.get_experiment_window_range(gas, 0)
             gas_mask = (data['gas'] == gas) & (window_start_dt >= start_dt) & (window_start_dt <= end_dt)
             print(f"Reserved final test experiment for {gas}: {experiment_name}")
@@ -314,13 +326,14 @@ class ExperimentFolds:
         X_test = pd.DataFrame(imputer.transform(X_test_raw), columns=imputer.get_feature_names_out(X_dev_raw.columns),
                                index=X_test_raw.index)
 
-        # Fold over the remaining (dev) experiments only - index 1..n-1 per gas.
-        n_folds = max(len(self.experiment_config[gas]) - 1 for gas in self.gases)
+        # Fold over the remaining (dev) experiments only - index 1..n-1 per
+        # gas actually in scope (gases_for_folds).
+        n_folds = max(len(self.experiment_config[gas]) - 1 for gas in gases_for_folds)
         fold_index_pairs = []
         for fold in range(n_folds):
             test_mask = pd.Series(False, index=dev_data.index)
             held_out = {}
-            for gas in self.gases:
+            for gas in gases_for_folds:
                 n_dev_experiments = len(self.experiment_config[gas]) - 1
                 exp_index = 1 + (fold % n_dev_experiments)
                 experiment_name, start_dt, end_dt = self.get_experiment_window_range(gas, exp_index)
