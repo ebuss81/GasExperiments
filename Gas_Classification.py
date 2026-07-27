@@ -621,6 +621,20 @@ class GasClassification:
 
         return table
 
+    def _aggregate_over_folds(self, group, column):
+        """
+        Collapse a (possibly multi-fold) group of rows sharing the same
+        series/split down to one row per n_features: the mean of `column`
+        across folds, plus a "{column}_std" column - NaN wherever there's
+        only a single fold/run at that n_features (e.g. old tables from
+        before compute_feature_subset_accuracy(use_experiment_folds=True)
+        existed, which only ever have one row per n_features - nothing to
+        take a std of). Shared by plot_feature_subset_accuracy and
+        get_best_feature_subsets_metrics so both aggregate the same way.
+        """
+        agg = group.groupby('n_features', as_index=False)[column].agg(['mean', 'std'])
+        return agg.rename(columns={'mean': column, 'std': f'{column}_std'})
+
     def _select_best_n_features(self, val, min_delta, method, column='accuracy', total_features=None,
                                  lambda_penalty=0.1):
         """
@@ -665,8 +679,17 @@ class GasClassification:
         per (source, approach) combination - so any combination of
         previously computed ranked-features files *for this scope* can be
         compared together just by having their tables sit in that folder.
-        Series with a single row (e.g. the "all_features" baseline) are
-        drawn as a flat dashed reference line instead of a single point.
+        Series with a single distinct n_features value (e.g. the
+        "all_features" baseline) are drawn as a flat dashed reference
+        line instead of a single point.
+
+        If the table has multiple folds (compute_feature_subset_accuracy
+        was called with use_experiment_folds=True), each series' rows are
+        first collapsed to one point per n_features: the mean across
+        folds, plotted as the line, with a shaded +-1 std band around it.
+        Old single-run tables (one row per n_features already) are
+        unaffected - the "mean" is just that one value and there's no
+        band to draw.
 
         keep_classes/drop_classes/gas must match what
         compute_feature_subset_accuracy was called with - only tables saved
@@ -712,7 +735,7 @@ class GasClassification:
             total_features = all_features_rows['n_features'].max() if not all_features_rows.empty else None
             val_only = data[data['split'] == 'val']
             for series_name, group in val_only.groupby('series'):
-                group = group.sort_values('n_features').copy()
+                group = self._aggregate_over_folds(group, metric)
                 if len(group) < 2:
                     continue  # nothing to mark on a single-point baseline
                 if rolling_window and rolling_window > 1:
@@ -730,14 +753,23 @@ class GasClassification:
         for ax, split in zip(axes, ('train', 'val', 'test')):
             split_data = data[data['split'] == split]
             for series_name, group in split_data.groupby('series'):
-                group = group.sort_values('n_features')
+                # Collapse multiple folds' rows at the same n_features into
+                # one mean (+ std, for the shaded band below) - a no-op
+                # for old single-run tables, which only ever have one row
+                # per n_features already.
+                group = self._aggregate_over_folds(group, metric)
                 if len(group) == 1:
                     ax.hlines(group[metric].iloc[0], x_min, x_max, linestyles='--', label=series_name)
                 else:
                     y = group[metric]
+                    y_std = group[f'{metric}_std']
                     if rolling_window and rolling_window > 1:
                         y = y.rolling(window=rolling_window, min_periods=1, center=True).mean()
+                        y_std = y_std.rolling(window=rolling_window, min_periods=1, center=True).mean()
                     line, = ax.plot(group['n_features'], y, label=series_name, marker='.')
+                    if y_std.notna().any():
+                        ax.fill_between(group['n_features'], y - y_std.fillna(0), y + y_std.fillna(0),
+                                         color=line.get_color(), alpha=0.15, linewidth=0)
                     if series_name in best_n_by_series:
                         best_n = best_n_by_series[series_name]
                         match = group['n_features'] == best_n
@@ -833,9 +865,13 @@ class GasClassification:
 
         rows = []
         for series_name, group in data.groupby('series'):
-            val = group[group['split'] == 'val'].sort_values('n_features').copy()
+            val = group[group['split'] == 'val']
             if val.empty:
                 continue
+            # Collapse multiple folds' val rows at the same n_features into
+            # one mean before picking "best" - a no-op for old single-run
+            # tables (one row per n_features already).
+            val = self._aggregate_over_folds(val, 'accuracy')
             if rolling_window and rolling_window > 1:
                 val['accuracy'] = val['accuracy'].rolling(window=rolling_window, min_periods=1, center=True).mean()
             peak_accuracy = val['accuracy'].max()
@@ -844,13 +880,22 @@ class GasClassification:
                                                  lambda_penalty=lambda_penalty)
             best_n = best['n_features']
 
+            # Same averaging for the reported test accuracy: with multiple
+            # folds, each fold refit a different classifier but scored it
+            # on the same held-out test set, so there's one test row per
+            # fold at best_n to average, not just one to read off.
             test = group[(group['split'] == 'test') & (group['n_features'] == best_n)]
-            test_acc = test['accuracy'].iloc[0] if not test.empty else float('nan')
+            test_acc = test['accuracy'].mean() if not test.empty else float('nan')
+            test_std = test['accuracy'].std() if len(test) > 1 else float('nan')
 
             print(f"\n{series_name}\n{'-' * len(series_name)}")
             print(f"  best val accuracy  : {best['accuracy']:.4f}  (n_features={best_n}, "
                   f"true peak={peak_accuracy:.4f})")
-            print(f"  test accuracy      : {test_acc:.4f}  (at n_features={best_n})")
+            if pd.notna(test_std):
+                print(f"  test accuracy      : {test_acc:.4f} +/- {test_std:.4f}  "
+                      f"(at n_features={best_n}, across {len(test)} folds)")
+            else:
+                print(f"  test accuracy      : {test_acc:.4f}  (at n_features={best_n})")
             rows.append({'series': series_name, 'n_features': best_n,
                          'val_accuracy': best['accuracy'], 'test_accuracy': test_acc})
 
