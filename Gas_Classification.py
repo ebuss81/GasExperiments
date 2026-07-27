@@ -518,7 +518,7 @@ class GasClassification:
                 for i, (train_idx, test_idx) in enumerate(fold_index_pairs)
             ]
             if n_features_grid is None:
-                n_features_grid = [1, 2, 3, 5, 10, 20, 30, 50, 75, 100, 150]#, 200, 300, 500, 782]
+                n_features_grid = [1, 2, 3, 5, 10, 15, 20, 30, 40, 50, 60, 75, 100, 150, 200, 300, 500, 782]
         else:
             data_init, groups = utils.load_and_process_data_for_classification(
                 self.folds, apply_smote=False, scale=True, apply_undersample=False, target=target, fold=fold,
@@ -950,14 +950,13 @@ if __name__ == "__main__":
     keep_classes_by_gas = [['CO2_post', 'prestimulus'], ['O3_post', 'prestimulus'], ['N2_post', 'prestimulus']]
     for classes, gas in zip(keep_classes_by_gas, ["CO2", "O3", "N2"]):
         #GC.auto_ml(train=True, save=True, keep_classes=classes, gas=gas)
-        #GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
-        #multivariate_path = (
-        #    GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
-        #    / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
-        #)
-        #GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True,
-        #                                    keep_classes=classes, gas=gas)
-        GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized',lambda_penalty=0.1, show_all_folds=False)
+        GC.compute_feature_subset_accuracy(use_aggregated_ranking=False, max_features=10000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
+        multivariate_path = (
+            GC.folds.resolve_config_path(GC.folds.config_paths['results_path']) / "03_01_feature_selection"
+            / f"multivariate_ranked_features{utils.scope_suffix(gas, classes, None)}.csv"
+        )
+        GC.compute_feature_subset_accuracy(ranked_features_path=multivariate_path, max_features=2000, save=True, keep_classes=classes, gas=gas, use_experiment_folds=True, n_features_grid=None)
+        #GC.plot_feature_subset_accuracy(metric="accuracy", keep_classes=classes, gas=gas, rolling_window=1, mark_best=True, method='penalized',lambda_penalty=0.1, show_all_folds=False)
         #data_init, groups = utils.load_and_process_data_for_classification(
         #    GC.folds, apply_smote=True, apply_adasyn=False, scale=True, apply_undersample=False,
         #    fold=0, keep_classes=classes, drop_classes=None, gas=gas,
